@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, WorkspaceLeaf, setIcon, Menu, Modal, App, TFile } from "obsidian";
 import type ChineseWriterPlugin from "./main";
 import type { TreeNode, FileParseResult } from "./types";
 
@@ -75,6 +75,19 @@ export class TreeView extends ItemView {
     // 创建树容器
     const treeContainer = container.createDiv({
       cls: "chinese-writer-tree-container",
+    });
+
+    // 为树容器添加右键菜单（空白区域）
+    treeContainer.addEventListener("contextmenu", (e) => {
+      // 检查是否点击在空白区域（不是节点）
+      const target = e.target as HTMLElement;
+      if (target.classList.contains("chinese-writer-tree-container") || 
+          target.classList.contains("chinese-writer-tree") ||
+          target.classList.contains("chinese-writer-empty")) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showEmptyAreaContextMenu(e);
+      }
     });
 
     // 加载数据
@@ -370,6 +383,13 @@ export class TreeView extends ItemView {
     // 点击事件
     nodeContent.addEventListener("click", () => {
       this.onNodeClick(node);
+    });
+
+    // 右键菜单事件
+    nodeContent.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.showContextMenu(e, node);
     });
 
     // 子节点容器
@@ -903,5 +923,848 @@ export class TreeView extends ItemView {
     if (!fileNode) return null;
 
     return fileNode.children[h1Index] || null;
+  }
+
+  // ========== 右键菜单功能 ==========
+
+  /**
+   * 显示右键菜单
+   */
+  private showContextMenu(e: MouseEvent, node: TreeNode): void {
+    const menu = new Menu();
+
+    if (node.type === "file") {
+      // 一级（文件）显示原来的二级菜单（H1 操作）
+      this.addH1ContextMenu(menu, node);
+    } else if (node.type === "h1") {
+      // 二级（H1）显示原来的三级菜单（H2 操作）
+      this.addH2ContextMenu(menu, node);
+    } else if (node.type === "h2") {
+      // 三级（H2）只显示重命名和删除
+      this.addH2SelfContextMenu(menu, node);
+    }
+
+    menu.showAtMouseEvent(e);
+  }
+
+  /**
+   * 显示空白区域右键菜单
+   */
+  private showEmptyAreaContextMenu(e: MouseEvent): void {
+    const menu = new Menu();
+    
+    // 空白区域显示原来的一级菜单（文件操作）
+    this.addFileContextMenuForEmpty(menu);
+    
+    menu.showAtMouseEvent(e);
+  }
+
+  /**
+   * 添加空白区域的右键菜单（原文件级别菜单）
+   */
+  private addFileContextMenuForEmpty(menu: Menu): void {
+    // 1. 创建集合
+    menu.addItem((item) => {
+      item
+        .setTitle("创建集合")
+        .setIcon("file-plus")
+        .onClick(async () => {
+          await this.createFile();
+        });
+    });
+  }
+
+  /**
+   * 添加 H1 级别的右键菜单（用于文件节点）
+   */
+  private addH1ContextMenu(menu: Menu, node: TreeNode): void {
+    // 1. 创建分类
+    menu.addItem((item) => {
+      item
+        .setTitle("创建分类")
+        .setIcon("heading-1")
+        .onClick(async () => {
+          await this.createH1(node);
+        });
+    });
+
+    // 2. 创建集合
+    menu.addItem((item) => {
+      item
+        .setTitle("创建集合")
+        .setIcon("file-plus")
+        .onClick(async () => {
+          await this.createFile();
+        });
+    });
+
+    // 3. 重命名集合
+    menu.addItem((item) => {
+      item
+        .setTitle("重命名集合")
+        .setIcon("pencil")
+        .onClick(async () => {
+          await this.renameFile(node);
+        });
+    });
+
+    // 4. 分割线
+    menu.addSeparator();
+
+    // 5. 删除集合
+    menu.addItem((item) => {
+      item
+        .setTitle("删除集合")
+        .setIcon("trash")
+        .onClick(async () => {
+          await this.deleteFile(node);
+        });
+    });
+  }
+
+  /**
+   * 添加 H2 级别的右键菜单（用于 H1 节点）
+   */
+  private addH2ContextMenu(menu: Menu, node: TreeNode): void {
+    // 获取父文件节点
+    const fileNode = this.findParentFileNode(node);
+
+    // 1. 创建设定
+    menu.addItem((item) => {
+      item
+        .setTitle("创建设定")
+        .setIcon("heading-2")
+        .onClick(async () => {
+          await this.createH2(node);
+        });
+    });
+
+    // 2. 创建分类
+    if (fileNode) {
+      menu.addItem((item) => {
+        item
+          .setTitle("创建分类")
+          .setIcon("heading-1")
+          .onClick(async () => {
+            await this.createH1(fileNode);
+          });
+      });
+    }
+
+    // 3. 重命名分类
+    menu.addItem((item) => {
+      item
+        .setTitle("重命名分类")
+        .setIcon("pencil")
+        .onClick(async () => {
+          await this.renameH1(node);
+        });
+    });
+
+    // 4. 分割线
+    menu.addSeparator();
+
+    // 5. 删除分类
+    menu.addItem((item) => {
+      item
+        .setTitle("删除分类")
+        .setIcon("trash")
+        .onClick(async () => {
+          await this.deleteH1(node);
+        });
+    });
+  }
+
+  /**
+   * 添加 H2 自身的右键菜单（用于 H2 节点）
+   */
+  private addH2SelfContextMenu(menu: Menu, node: TreeNode): void {
+    // 获取父 H1 节点
+    const h1Node = this.findParentH1Node(node);
+
+    // 1. 创建设定
+    if (h1Node) {
+      menu.addItem((item) => {
+        item
+          .setTitle("创建设定")
+          .setIcon("heading-2")
+          .onClick(async () => {
+            await this.createH2(h1Node);
+          });
+      });
+    }
+
+    // 2. 重命名设定
+    menu.addItem((item) => {
+      item
+        .setTitle("重命名设定")
+        .setIcon("pencil")
+        .onClick(async () => {
+          await this.renameH2(node);
+        });
+    });
+
+    // 3. 分割线
+    menu.addSeparator();
+
+    // 4. 删除设定
+    menu.addItem((item) => {
+      item
+        .setTitle("删除设定")
+        .setIcon("trash")
+        .onClick(async () => {
+          await this.deleteH2(node);
+        });
+    });
+  }
+
+  // ========== 文件操作 ==========
+
+  /**
+   * 创建新文件（集合）
+   */
+  private async createFile(): Promise<void> {
+    const modal = new TextInputModal(
+      this.app,
+      "创建集合",
+      "请输入集合名称",
+      "",
+      async (value) => {
+        if (!value.trim()) return;
+
+        const folderPath = this.plugin.settings.targetFolder;
+        if (!folderPath) return;
+
+        const fileName = value.trim();
+        const filePath = `${folderPath}/${fileName}.md`;
+
+        // 检查文件是否已存在
+        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+        if (existingFile) {
+          // 文件已存在，提示用户
+          return;
+        }
+
+        // 创建新文件
+        await this.app.vault.create(filePath, "");
+
+        // 更新 order.json
+        let fileOrder = this.plugin.orderManager.getFileOrder();
+        
+        // 如果 order.json 为空，获取目录下所有现有文件
+        if (fileOrder.length === 0) {
+          const parser = this.plugin.parser;
+          const files = parser.getMarkdownFilesInFolder(folderPath);
+          fileOrder = files.map(f => f.path);
+        } else {
+          // 如果 order.json 不为空，只添加新文件
+          fileOrder.push(filePath);
+        }
+        
+        await this.plugin.orderManager.setFileOrder(fileOrder);
+
+        // 等待一小段时间确保 order.json 保存完成
+        await new Promise(resolve => setTimeout(resolve, 400));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  /**
+   * 重命名文件（集合）
+   */
+  private async renameFile(node: TreeNode): Promise<void> {
+    if (!node.filePath) return;
+
+    const file = this.app.vault.getAbstractFileByPath(node.filePath);
+    if (!(file instanceof TFile)) return;
+
+    const modal = new TextInputModal(
+      this.app,
+      "重命名集合",
+      "请输入新名称",
+      node.text,
+      async (value) => {
+        if (!value.trim() || value.trim() === node.text) return;
+
+        const newName = value.trim();
+        const folderPath = node.filePath!.substring(0, node.filePath!.lastIndexOf("/"));
+        const newPath = `${folderPath}/${newName}.md`;
+
+        // 重命名文件
+        await this.app.fileManager.renameFile(file, newPath);
+
+        // 更新 order.json
+        const fileOrder = this.plugin.orderManager.getFileOrder();
+        const index = fileOrder.indexOf(node.filePath!);
+        if (index !== -1) {
+          fileOrder[index] = newPath;
+          await this.plugin.orderManager.setFileOrder(fileOrder);
+        }
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  /**
+   * 删除文件（集合）
+   */
+  private async deleteFile(node: TreeNode): Promise<void> {
+    if (!node.filePath) return;
+
+    const file = this.app.vault.getAbstractFileByPath(node.filePath);
+    if (!(file instanceof TFile)) return;
+
+    const modal = new ConfirmModal(
+      this.app,
+      "删除集合",
+      `确定要删除集合"${node.text}"吗？此操作不可恢复。`,
+      async () => {
+        // 更新 order.json
+        let fileOrder = this.plugin.orderManager.getFileOrder();
+        
+        // 如果 order.json 为空，获取目录下所有现有文件
+        if (fileOrder.length === 0) {
+          const folderPath = this.plugin.settings.targetFolder;
+          if (folderPath) {
+            const parser = this.plugin.parser;
+            const files = parser.getMarkdownFilesInFolder(folderPath);
+            fileOrder = files.map(f => f.path);
+          }
+        }
+        
+        // 删除文件
+        await this.app.vault.delete(file);
+        
+        // 从 order.json 中移除该文件
+        const index = fileOrder.indexOf(node.filePath!);
+        if (index !== -1) {
+          fileOrder.splice(index, 1);
+          await this.plugin.orderManager.setFileOrder(fileOrder);
+        }
+
+        // 等待一小段时间确保 order.json 保存完成
+        await new Promise(resolve => setTimeout(resolve, 400));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  // ========== H1 操作 ==========
+
+  /**
+   * 创建新 H1（分类）
+   */
+  private async createH1(node: TreeNode): Promise<void> {
+    const fileNode = this.findParentFileNode(node);
+    if (!fileNode || !fileNode.filePath) return;
+
+    const modal = new TextInputModal(
+      this.app,
+      "创建分类",
+      "请输入分类名称",
+      "",
+      async (value) => {
+        if (!value.trim()) return;
+
+        const h1Text = value.trim();
+        const file = this.app.vault.getAbstractFileByPath(fileNode.filePath!);
+        if (!(file instanceof TFile)) return;
+
+        // 读取文件内容
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+
+        // 在文件末尾添加新的 H1（不添加空行）
+        lines.push(`# ${h1Text}`);
+
+        // 写回文件
+        await this.app.vault.modify(file, lines.join("\n"));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  /**
+   * 重命名 H1（分类）
+   */
+  private async renameH1(node: TreeNode): Promise<void> {
+    const fileNode = this.findParentFileNode(node);
+    if (!fileNode || !fileNode.filePath) return;
+
+    const modal = new TextInputModal(
+      this.app,
+      "重命名分类",
+      "请输入新名称",
+      node.text,
+      async (value) => {
+        if (!value.trim() || value.trim() === node.text) return;
+
+        const newH1Text = value.trim();
+        const file = this.app.vault.getAbstractFileByPath(fileNode.filePath!);
+        if (!(file instanceof TFile)) return;
+
+        // 读取文件内容
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+
+        // 找到目标 H1 并重命名
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          const trimmed = line.trim();
+
+          if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+            const currentH1 = trimmed.substring(2).trim();
+            if (currentH1 === node.text) {
+              lines[i] = `# ${newH1Text}`;
+              break;
+            }
+          }
+        }
+
+        // 写回文件
+        await this.app.vault.modify(file, lines.join("\n"));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  /**
+   * 删除 H1（分类）
+   */
+  private async deleteH1(node: TreeNode): Promise<void> {
+    const fileNode = this.findParentFileNode(node);
+    if (!fileNode || !fileNode.filePath) return;
+
+    const modal = new ConfirmModal(
+      this.app,
+      "删除分类",
+      `确定要删除分类"${node.text}"及其下的所有内容吗？此操作不可恢复。`,
+      async () => {
+        const file = this.app.vault.getAbstractFileByPath(fileNode.filePath!);
+        if (!(file instanceof TFile)) return;
+
+        // 读取文件内容
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+
+        // 找到要删除的 H1 块
+        let startIndex = -1;
+        let endIndex = lines.length;
+        let foundH1 = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          const trimmed = line.trim();
+
+          if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+            const currentH1 = trimmed.substring(2).trim();
+
+            if (currentH1 === node.text) {
+              startIndex = i;
+              foundH1 = true;
+            } else if (foundH1) {
+              endIndex = i;
+              break;
+            }
+          }
+        }
+
+        if (startIndex === -1) return;
+
+        // 删除 H1 块
+        const newLines = [
+          ...lines.slice(0, startIndex),
+          ...lines.slice(endIndex),
+        ];
+
+        // 写回文件
+        await this.app.vault.modify(file, newLines.join("\n"));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  // ========== H2 操作 ==========
+
+  /**
+   * 创建新 H2（设定）
+   */
+  private async createH2(node: TreeNode): Promise<void> {
+    const h1Node = this.findParentH1Node(node);
+    const fileNode = this.findParentFileNode(node);
+    if (!h1Node || !fileNode || !fileNode.filePath) return;
+
+    const modal = new TextInputModal(
+      this.app,
+      "创建设定",
+      "请输入设定名称",
+      "",
+      async (value) => {
+        if (!value.trim()) return;
+
+        const h2Text = value.trim();
+        const file = this.app.vault.getAbstractFileByPath(fileNode.filePath!);
+        if (!(file instanceof TFile)) return;
+
+        // 读取文件内容
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+
+        // 找到目标 H1 的结束位置
+        let insertIndex = lines.length;
+        let inTargetH1 = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          const trimmed = line.trim();
+
+          if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+            const currentH1 = trimmed.substring(2).trim();
+
+            if (currentH1 === h1Node.text) {
+              inTargetH1 = true;
+            } else if (inTargetH1) {
+              insertIndex = i;
+              break;
+            }
+          }
+        }
+
+        // 在 H1 末尾插入新的 H2（不添加空行）
+        const newLines = [
+          ...lines.slice(0, insertIndex),
+          `## ${h2Text}`,
+          ...lines.slice(insertIndex),
+        ];
+
+        // 写回文件
+        await this.app.vault.modify(file, newLines.join("\n"));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  /**
+   * 重命名 H2（设定）
+   */
+  private async renameH2(node: TreeNode): Promise<void> {
+    const h1Node = this.findParentH1Node(node);
+    const fileNode = this.findParentFileNode(node);
+    if (!h1Node || !fileNode || !fileNode.filePath) return;
+
+    const modal = new TextInputModal(
+      this.app,
+      "重命名设定",
+      "请输入新名称",
+      node.text,
+      async (value) => {
+        if (!value.trim() || value.trim() === node.text) return;
+
+        const newH2Text = value.trim();
+        const file = this.app.vault.getAbstractFileByPath(fileNode.filePath!);
+        if (!(file instanceof TFile)) return;
+
+        // 读取文件内容
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+
+        // 找到目标 H2 并重命名
+        let inTargetH1 = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          const trimmed = line.trim();
+
+          if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+            const currentH1 = trimmed.substring(2).trim();
+            inTargetH1 = (currentH1 === h1Node.text);
+          } else if (inTargetH1 && trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
+            const currentH2 = trimmed.substring(3).trim();
+            if (currentH2 === node.text) {
+              lines[i] = `## ${newH2Text}`;
+              break;
+            }
+          }
+        }
+
+        // 写回文件
+        await this.app.vault.modify(file, lines.join("\n"));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+
+  /**
+   * 删除 H2（设定）
+   */
+  private async deleteH2(node: TreeNode): Promise<void> {
+    const h1Node = this.findParentH1Node(node);
+    const fileNode = this.findParentFileNode(node);
+    if (!h1Node || !fileNode || !fileNode.filePath) return;
+
+    const modal = new ConfirmModal(
+      this.app,
+      "删除设定",
+      `确定要删除设定"${node.text}"及其内容吗？此操作不可恢复。`,
+      async () => {
+        const file = this.app.vault.getAbstractFileByPath(fileNode.filePath!);
+        if (!(file instanceof TFile)) return;
+
+        // 读取文件内容
+        const content = await this.app.vault.read(file);
+        const lines = content.split("\n");
+
+        // 找到要删除的 H2 块
+        let startIndex = -1;
+        let endIndex = lines.length;
+        let inTargetH1 = false;
+        let foundH2 = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line) continue;
+          const trimmed = line.trim();
+
+          if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+            const currentH1 = trimmed.substring(2).trim();
+            inTargetH1 = (currentH1 === h1Node.text);
+
+            if (inTargetH1 === false && foundH2) {
+              endIndex = i;
+              break;
+            }
+          } else if (inTargetH1 && trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
+            const currentH2 = trimmed.substring(3).trim();
+
+            if (currentH2 === node.text) {
+              startIndex = i;
+              foundH2 = true;
+            } else if (foundH2) {
+              endIndex = i;
+              break;
+            }
+          }
+        }
+
+        if (startIndex === -1) return;
+
+        // 删除 H2 块
+        const newLines = [
+          ...lines.slice(0, startIndex),
+          ...lines.slice(endIndex),
+        ];
+
+        // 写回文件
+        await this.app.vault.modify(file, newLines.join("\n"));
+
+        // 刷新视图
+        await this.smartUpdate();
+      }
+    );
+
+    modal.open();
+  }
+}
+
+// ========== 辅助 Modal 类 ==========
+
+/**
+ * 文本输入对话框
+ */
+class TextInputModal extends Modal {
+  private title: string;
+  private placeholder: string;
+  private defaultValue: string;
+  private onSubmit: (value: string) => void;
+
+  constructor(
+    app: App,
+    title: string,
+    placeholder: string,
+    defaultValue: string,
+    onSubmit: (value: string) => void
+  ) {
+    super(app);
+    this.title = title;
+    this.placeholder = placeholder;
+    this.defaultValue = defaultValue;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+
+    // 设置 modal 容器的样式
+    const modalEl = contentEl.closest(".modal") as HTMLElement;
+    if (modalEl) {
+      modalEl.style.minHeight = "auto";
+      modalEl.style.height = "auto";
+      modalEl.style.maxWidth = "400px";
+      modalEl.style.width = "90%";
+    }
+
+    // 设置 contentEl 的样式
+    contentEl.style.padding = "1em";
+
+    const titleEl = contentEl.createEl("h2", { text: this.title });
+    titleEl.style.marginTop = "0";
+    titleEl.style.marginBottom = "0.8em";
+    titleEl.style.fontSize = "1.2em";
+
+    const inputEl = contentEl.createEl("input", {
+      type: "text",
+      placeholder: this.placeholder,
+      value: this.defaultValue,
+    });
+    inputEl.style.width = "100%";
+    inputEl.style.marginBottom = "1em";
+    inputEl.style.padding = "0.5em";
+
+    // 自动聚焦并选中文本
+    inputEl.focus();
+    inputEl.select();
+
+    const buttonContainer = contentEl.createDiv();
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.justifyContent = "flex-end";
+    buttonContainer.style.gap = "0.5em";
+
+    const cancelBtn = buttonContainer.createEl("button", { text: "取消" });
+    cancelBtn.addEventListener("click", () => {
+      this.close();
+    });
+
+    const submitBtn = buttonContainer.createEl("button", {
+      text: "确定",
+      cls: "mod-cta",
+    });
+    submitBtn.addEventListener("click", () => {
+      const value = inputEl.value;
+      this.close();
+      this.onSubmit(value);
+    });
+
+    // 回车提交
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const value = inputEl.value;
+        this.close();
+        this.onSubmit(value);
+      } else if (e.key === "Escape") {
+        this.close();
+      }
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
+ * 确认对话框
+ */
+class ConfirmModal extends Modal {
+  private title: string;
+  private message: string;
+  private onConfirm: () => void;
+
+  constructor(
+    app: App,
+    title: string,
+    message: string,
+    onConfirm: () => void
+  ) {
+    super(app);
+    this.title = title;
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+
+    // 设置 modal 容器的样式
+    const modalEl = contentEl.closest(".modal") as HTMLElement;
+    if (modalEl) {
+      modalEl.style.minHeight = "auto";
+      modalEl.style.height = "auto";
+      modalEl.style.maxWidth = "400px";
+      modalEl.style.width = "90%";
+    }
+
+    // 设置 contentEl 的样式
+    contentEl.style.padding = "1em";
+
+    const titleEl = contentEl.createEl("h2", { text: this.title });
+    titleEl.style.marginTop = "0";
+    titleEl.style.marginBottom = "0.8em";
+    titleEl.style.fontSize = "1.2em";
+
+    const messageEl = contentEl.createEl("p", { text: this.message });
+    messageEl.style.marginBottom = "1em";
+
+    const buttonContainer = contentEl.createDiv();
+    buttonContainer.style.display = "flex";
+    buttonContainer.style.justifyContent = "flex-end";
+    buttonContainer.style.gap = "0.5em";
+    buttonContainer.style.marginTop = "0.5em";
+
+    const cancelBtn = buttonContainer.createEl("button", { text: "取消" });
+    cancelBtn.addEventListener("click", () => {
+      this.close();
+    });
+
+    const confirmBtn = buttonContainer.createEl("button", {
+      text: "确定",
+      cls: "mod-warning",
+    });
+    confirmBtn.addEventListener("click", () => {
+      this.close();
+      this.onConfirm();
+    });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }

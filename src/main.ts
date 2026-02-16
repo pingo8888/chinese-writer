@@ -58,27 +58,27 @@ export default class ChineseWriterPlugin extends Plugin {
 
     this.registerEvent(
       this.app.vault.on("create", (file) => {
-        // 当新文件被创建时，智能更新视图
+        // 当新文件被创建时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
-          this.smartUpdateView();
+          this.syncOrderOnFileCreate(file);
         }
       })
     );
 
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        // 当文件被删除时，智能更新视图
+        // 当文件被删除时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
-          this.smartUpdateView();
+          this.syncOrderOnFileDelete(file);
         }
       })
     );
 
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        // 当文件被重命名时，智能更新视图
+        // 当文件被重命名时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
-          this.smartUpdateView();
+          this.syncOrderOnFileRename(file, oldPath);
         }
       })
     );
@@ -158,5 +158,124 @@ export default class ChineseWriterPlugin extends Plugin {
    */
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  /**
+   * 文件创建时同步 order.json
+   */
+  private async syncOrderOnFileCreate(file: TFile): Promise<void> {
+    const folderPath = this.settings.targetFolder;
+    if (!folderPath) {
+      await this.smartUpdateView();
+      return;
+    }
+
+    // 检查文件是否在目标文件夹内
+    if (!file.path.startsWith(folderPath + "/")) {
+      return;
+    }
+
+    let fileOrder = this.orderManager.getFileOrder();
+
+    // 如果 order.json 为空，获取目录下所有现有文件
+    if (fileOrder.length === 0) {
+      const files = this.parser.getMarkdownFilesInFolder(folderPath);
+      fileOrder = files.map(f => f.path);
+    } else if (!fileOrder.includes(file.path)) {
+      // 如果文件不在 order.json 中，添加到末尾
+      fileOrder.push(file.path);
+    }
+
+    await this.orderManager.setFileOrder(fileOrder);
+    
+    // 延迟刷新视图
+    setTimeout(() => {
+      this.smartUpdateView();
+    }, 400);
+  }
+
+  /**
+   * 文件删除时同步 order.json
+   */
+  private async syncOrderOnFileDelete(file: TFile): Promise<void> {
+    const folderPath = this.settings.targetFolder;
+    if (!folderPath) {
+      await this.smartUpdateView();
+      return;
+    }
+
+    // 检查文件是否在目标文件夹内
+    if (!file.path.startsWith(folderPath + "/")) {
+      return;
+    }
+
+    let fileOrder = this.orderManager.getFileOrder();
+
+    // 如果 order.json 为空，获取目录下所有现有文件（删除前）
+    if (fileOrder.length === 0) {
+      const files = this.parser.getMarkdownFilesInFolder(folderPath);
+      fileOrder = files.map(f => f.path);
+    }
+
+    // 从 order.json 中移除该文件
+    const index = fileOrder.indexOf(file.path);
+    if (index !== -1) {
+      fileOrder.splice(index, 1);
+      await this.orderManager.setFileOrder(fileOrder);
+    }
+
+    // 延迟刷新视图
+    setTimeout(() => {
+      this.smartUpdateView();
+    }, 400);
+  }
+
+  /**
+   * 文件重命名时同步 order.json
+   */
+  private async syncOrderOnFileRename(file: TFile, oldPath: string): Promise<void> {
+    const folderPath = this.settings.targetFolder;
+    if (!folderPath) {
+      await this.smartUpdateView();
+      return;
+    }
+
+    // 检查文件是否在目标文件夹内
+    const wasInFolder = oldPath.startsWith(folderPath + "/");
+    const isInFolder = file.path.startsWith(folderPath + "/");
+
+    if (!wasInFolder && !isInFolder) {
+      return;
+    }
+
+    let fileOrder = this.orderManager.getFileOrder();
+
+    // 如果 order.json 为空，获取目录下所有现有文件
+    if (fileOrder.length === 0) {
+      const files = this.parser.getMarkdownFilesInFolder(folderPath);
+      fileOrder = files.map(f => f.path);
+    } else {
+      // 更新 order.json 中的文件路径
+      const index = fileOrder.indexOf(oldPath);
+      if (index !== -1) {
+        if (isInFolder) {
+          // 文件仍在文件夹内，更新路径
+          fileOrder[index] = file.path;
+        } else {
+          // 文件被移出文件夹，移除
+          fileOrder.splice(index, 1);
+        }
+      } else if (isInFolder) {
+        // 文件被移入文件夹，添加
+        fileOrder.push(file.path);
+      }
+    }
+
+    await this.orderManager.setFileOrder(fileOrder);
+
+    // 延迟刷新视图
+    setTimeout(() => {
+      this.smartUpdateView();
+    }, 400);
   }
 }

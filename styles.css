@@ -170,7 +170,6 @@
   font-size: 14px;
   font-weight: 500;
   color: var(--text-muted);
-  background-color: var(--background-modifier-border);
   padding: 2px 6px;
   border-radius: 4px;
   flex-shrink: 0;
@@ -216,11 +215,6 @@
 
 .chinese-writer-tree-container::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
-}
-
-/* 拖放样式 */
-.tree-item-content[draggable="true"] {
-  /* 不改变鼠标指针 */
 }
 
 /* 拖动定位线 */
