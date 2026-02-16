@@ -1,7 +1,7 @@
 import { App, TFile, MarkdownView, editorLivePreviewField } from "obsidian";
 import type ChineseWriterPlugin from "./main";
 import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate, PluginValue } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { RangeSetBuilder, Transaction } from "@codemirror/state";
 
 /**
  * 高亮管理器
@@ -11,6 +11,7 @@ export class HighlightManager {
   plugin: ChineseWriterPlugin;
   app: App;
   private keywordsCache: Map<string, Set<string>> = new Map();
+  private keywordsVersion = 0;
 
   constructor(plugin: ChineseWriterPlugin) {
     this.plugin = plugin;
@@ -83,6 +84,14 @@ export class HighlightManager {
    */
   clearCache(): void {
     this.keywordsCache.clear();
+    this.keywordsVersion++;
+  }
+
+  /**
+   * 获取关键字版本号（缓存失效时递增）
+   */
+  getKeywordsVersion(): number {
+    return this.keywordsVersion;
   }
 
   /**
@@ -92,27 +101,39 @@ export class HighlightManager {
     // 清除缓存
     this.clearCache();
 
-    // 触发编辑器重新渲染
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeView && activeView.editor) {
-      // 保存当前状态
-      const cursor = activeView.editor.getCursor();
-      const content = activeView.editor.getValue();
-
-      // 使用 Obsidian Editor 的 setValue 方法
-      // 这会触发完整的编辑器更新,包括所有扩展
-      activeView.editor.setValue("");
-
-      // 延迟后恢复内容
-      setTimeout(() => {
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (view && view.editor) {
-          view.editor.setValue(content);
-          // 恢复光标位置
-          view.editor.setCursor(cursor);
+    // 刷新所有 Markdown 编辑器，避免依赖当前激活叶子
+    // 同时派发一次无副作用事务，确保 ViewPlugin 立即执行 update()
+    const leaves = this.app.workspace.getLeavesOfType("markdown");
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.editor) {
+        view.editor.refresh();
+        const cmView = (view.editor as unknown as { cm?: EditorView }).cm;
+        if (cmView) {
+          cmView.dispatch({
+            annotations: Transaction.addToHistory.of(false),
+          });
         }
-      }, 10);
+      }
     }
+  }
+
+  /**
+   * 从 CodeMirror EditorView 找到对应的 MarkdownView
+   */
+  private getMarkdownViewForEditorView(editorView: EditorView): MarkdownView | null {
+    const leaves = this.app.workspace.getLeavesOfType("markdown");
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (!(view instanceof MarkdownView)) continue;
+
+      const cmView = (view.editor as unknown as { cm?: EditorView }).cm;
+      if (cmView === editorView) {
+        return view;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -125,21 +146,24 @@ export class HighlightManager {
       class implements PluginValue {
         decorations: DecorationSet = Decoration.none;
         currentFile: TFile | null = null;
+        keywordsVersionSeen = -1;
 
         constructor(view: EditorView) {
+          this.keywordsVersionSeen = manager.getKeywordsVersion();
           this.updateDecorations(view);
         }
 
         async updateDecorations(view: EditorView) {
-          // 获取当前活动的 Markdown 视图
-          const activeView = manager.app.workspace.getActiveViewOfType(MarkdownView);
-          if (!activeView || !activeView.file) {
+          // 获取当前编辑器对应的 Markdown 视图
+          const markdownView = manager.getMarkdownViewForEditorView(view);
+          if (!markdownView || !markdownView.file) {
             this.decorations = Decoration.none;
             return;
           }
 
-          const file = activeView.file;
+          const file = markdownView.file;
           this.currentFile = file;
+          this.keywordsVersionSeen = manager.getKeywordsVersion();
 
           // 获取对应的设定库
           const settingFolder = manager.getSettingFolderForFile(file.path);
@@ -204,11 +228,17 @@ export class HighlightManager {
           }
 
           this.decorations = builder.finish();
+
+          // 异步计算完成后主动触发一次轻量事务，立即重绘装饰器
+          view.dispatch({
+            annotations: Transaction.addToHistory.of(false),
+          });
         }
 
         update(update: ViewUpdate) {
-          // 当文档改变时，重新计算装饰器
-          if (update.docChanged) {
+          // 文档变化或关键字缓存失效时，重新计算装饰器
+          const keywordsChanged = this.keywordsVersionSeen !== manager.getKeywordsVersion();
+          if (update.docChanged || keywordsChanged) {
             this.updateDecorations(update.view);
           }
         }

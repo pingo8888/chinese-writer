@@ -83,12 +83,7 @@ export default class ChineseWriterPlugin extends Plugin {
               // 触发编辑器重新渲染以更新高亮
               // 延迟执行以确保文件修改完成
               setTimeout(() => {
-                this.app.workspace.updateOptions();
-                // 强制刷新当前活动的编辑器视图
-                const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-                if (activeView && activeView.editor) {
-                  activeView.editor.refresh();
-                }
+                this.highlightManager.refreshCurrentEditor();
               }, 100);
               break;
             }
