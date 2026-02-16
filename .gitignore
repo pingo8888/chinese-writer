@@ -17,9 +17,13 @@ main.js
 
 # obsidian
 data.json
+order.json
+
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 
 # release path
 release
+示例文档.md
+CHANGELOG.md
