@@ -110,10 +110,10 @@ export class OrderManager {
    * 重新排序文件中的 H1（直接修改文件）
    */
   async reorderH1InFile(filePath: string, h1Order: string[]): Promise<void> {
-    console.log("reorderH1InFile called:", { filePath, h1Order });
+    // console.log("reorderH1InFile called:", { filePath, h1Order });
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile)) {
-      console.log("File not found:", filePath);
+      // console.log("File not found:", filePath);
       return;
     }
 
@@ -151,7 +151,7 @@ export class OrderManager {
       h1Blocks.set(currentH1, currentBlock);
     }
 
-    console.log("Parsed H1 blocks:", Array.from(h1Blocks.keys()));
+    // console.log("Parsed H1 blocks:", Array.from(h1Blocks.keys()));
 
     // 按照新顺序重组内容
     const newLines: string[] = [...beforeFirstH1];
@@ -161,15 +161,15 @@ export class OrderManager {
       if (block) {
         newLines.push(...block);
       } else {
-        console.log("H1 block not found:", h1Text);
+        // console.log("H1 block not found:", h1Text);
       }
     }
 
     // 写回文件
     const newContent = newLines.join("\n");
-    console.log("Writing reordered content, lines:", newLines.length);
+    // console.log("Writing reordered content, lines:", newLines.length);
     await this.app.vault.modify(file, newContent);
-    console.log("reorderH1InFile completed");
+    // console.log("reorderH1InFile completed");
   }
 
   /**
@@ -280,7 +280,7 @@ export class OrderManager {
     targetH1Text: string,
     insertBefore: boolean = false
   ): Promise<void> {
-    console.log("moveH1BetweenFiles:", { sourceFilePath, targetFilePath, h1Text, targetH1Text, insertBefore });
+    // console.log("moveH1BetweenFiles:", { sourceFilePath, targetFilePath, h1Text, targetH1Text, insertBefore });
 
     // 从源文件读取 H1 内容
     const sourceFile = this.app.vault.getAbstractFileByPath(sourceFilePath);
@@ -314,7 +314,7 @@ export class OrderManager {
     }
 
     if (!h1Found) {
-      console.log("H1 not found in source file");
+      // console.log("H1 not found in source file");
       return;
     }
 
@@ -379,7 +379,7 @@ export class OrderManager {
 
     await this.app.vault.modify(targetFile, newTargetLines.join("\n"));
 
-    console.log("moveH1BetweenFiles completed");
+    // console.log("moveH1BetweenFiles completed");
   }
 
   /**
@@ -394,12 +394,12 @@ export class OrderManager {
     targetH2Text: string,
     insertBefore: boolean = false
   ): Promise<void> {
-    console.log("moveH2BetweenH1s:", {
-      sourceFilePath, sourceH1Text,
-      targetFilePath, targetH1Text,
-      h2Text, targetH2Text,
-      insertBefore
-    });
+    // console.log("moveH2BetweenH1s:", {
+    //   sourceFilePath, sourceH1Text,
+    //   targetFilePath, targetH1Text,
+    //   h2Text, targetH2Text,
+    //   insertBefore
+    // });
 
     // 从源位置读取 H2 内容
     const sourceFile = this.app.vault.getAbstractFileByPath(sourceFilePath);
@@ -434,7 +434,7 @@ export class OrderManager {
     }
 
     if (h2Block.length === 0) {
-      console.log("H2 not found in source");
+      // console.log("H2 not found in source");
       return;
     }
 
@@ -444,7 +444,7 @@ export class OrderManager {
     // 插入到目标位置
     await this.insertH2ToFile(targetFilePath, targetH1Text, targetH2Text, h2Block, insertBefore);
 
-    console.log("moveH2BetweenH1s completed");
+    // console.log("moveH2BetweenH1s completed");
   }
 
   /**

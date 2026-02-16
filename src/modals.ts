@@ -8,6 +8,7 @@ export class TextInputModal extends Modal {
   private placeholder: string;
   private defaultValue: string;
   private onSubmit: (value: string) => void;
+  private submitted = false; // 防止重复提交
 
   constructor(
     app: App,
@@ -70,18 +71,28 @@ export class TextInputModal extends Modal {
       text: "确定",
       cls: "mod-cta",
     });
-    submitBtn.addEventListener("click", () => {
+
+    // 提交处理函数
+    const doSubmit = () => {
+      if (this.submitted) {
+        return; // 防止重复提交
+      }
+      this.submitted = true;
+
       const value = inputEl.value;
       this.close();
-      this.onSubmit(value);
-    });
+      // 使用 setTimeout 确保 modal 完全关闭后再执行回调
+      setTimeout(() => {
+        this.onSubmit(value);
+      }, 10);
+    };
+
+    submitBtn.addEventListener("click", doSubmit);
 
     // 回车提交
-    inputEl.addEventListener("keydown", (e) => {
+    inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") {
-        const value = inputEl.value;
-        this.close();
-        this.onSubmit(value);
+        doSubmit();
       } else if (e.key === "Escape") {
         this.close();
       }

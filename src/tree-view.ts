@@ -389,6 +389,11 @@ export class TreeView extends ItemView {
           : "heading-2";
     setIcon(iconEl, iconName);
 
+    // 阻止图标的点击事件冒泡
+    iconEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
     // 节点文本
     const textEl = nodeContent.createSpan({
       text: node.text,
@@ -568,7 +573,6 @@ export class TreeView extends ItemView {
   private onNodeClick(node: TreeNode): void {
     // 可以在这里添加点击节点后的行为
     // 例如：跳转到对应的文件位置
-    console.log("Node clicked:", node);
   }
 
   // ========== 拖放功能 ==========
@@ -784,7 +788,7 @@ export class TreeView extends ItemView {
     const targetFileNode = this.findParentFileNode(targetNode);
 
     if (!draggedFileNode || !targetFileNode) {
-      console.log("Parent file node not found");
+      // console.log("Parent file node not found");
       return;
     }
 
@@ -799,7 +803,7 @@ export class TreeView extends ItemView {
       let targetIndex = h1Texts.indexOf(targetNode.text);
 
       if (draggedIndex === -1 || targetIndex === -1) {
-        console.log("H1 index not found", { draggedIndex, targetIndex, h1Texts });
+        // console.log("H1 index not found", { draggedIndex, targetIndex, h1Texts });
         return;
       }
 
@@ -817,18 +821,18 @@ export class TreeView extends ItemView {
         h1Texts.splice(targetIndex + 1, 0, removed);
       }
 
-      console.log("Reordering H1 in same file:", { filePath: draggedFileNode.filePath, newOrder: h1Texts });
+      // console.log("Reordering H1 in same file:", { filePath: draggedFileNode.filePath, newOrder: h1Texts });
       await this.plugin.orderManager.reorderH1InFile(draggedFileNode.filePath, h1Texts);
     } else {
       // 跨文件移动
       if (!draggedFileNode.filePath || !targetFileNode.filePath) return;
 
-      console.log("Moving H1 across files:", {
-        from: draggedFileNode.filePath,
-        to: targetFileNode.filePath,
-        h1: draggedNode.text,
-        insertBefore: this.insertBefore
-      });
+      // console.log("Moving H1 across files:", {
+      //   from: draggedFileNode.filePath,
+      //   to: targetFileNode.filePath,
+      //   h1: draggedNode.text,
+      //   insertBefore: this.insertBefore
+      // });
 
       // 从源文件移除 H1
       await this.plugin.orderManager.moveH1BetweenFiles(
@@ -854,7 +858,7 @@ export class TreeView extends ItemView {
     const targetFileNode = this.findParentFileNode(targetNode);
 
     if (!draggedH1Node || !targetH1Node || !draggedFileNode || !targetFileNode) {
-      console.log("Parent nodes not found");
+      // console.log("Parent nodes not found");
       return;
     }
 
@@ -869,7 +873,7 @@ export class TreeView extends ItemView {
       let targetIndex = h2Texts.indexOf(targetNode.text);
 
       if (draggedIndex === -1 || targetIndex === -1) {
-        console.log("H2 index not found", { draggedIndex, targetIndex, h2Texts });
+        // console.log("H2 index not found", { draggedIndex, targetIndex, h2Texts });
         return;
       }
 
@@ -887,25 +891,25 @@ export class TreeView extends ItemView {
         h2Texts.splice(targetIndex + 1, 0, removed);
       }
 
-      console.log("Reordering H2 in same H1:", {
-        filePath: draggedFileNode.filePath,
-        h1: draggedH1Node.text,
-        newOrder: h2Texts
-      });
+      // console.log("Reordering H2 in same H1:", {
+      //   filePath: draggedFileNode.filePath,
+      //   h1: draggedH1Node.text,
+      //   newOrder: h2Texts
+      // });
 
       await this.plugin.orderManager.reorderH2InFile(draggedFileNode.filePath, draggedH1Node.text, h2Texts);
     } else {
       // 跨 H1 或跨文件移动
       if (!draggedFileNode.filePath || !targetFileNode.filePath) return;
 
-      console.log("Moving H2 across H1/files:", {
-        fromFile: draggedFileNode.filePath,
-        fromH1: draggedH1Node.text,
-        toFile: targetFileNode.filePath,
-        toH1: targetH1Node.text,
-        h2: draggedNode.text,
-        insertBefore: this.insertBefore
-      });
+      // console.log("Moving H2 across H1/files:", {
+      //   fromFile: draggedFileNode.filePath,
+      //   fromH1: draggedH1Node.text,
+      //   toFile: targetFileNode.filePath,
+      //   toH1: targetH1Node.text,
+      //   h2: draggedNode.text,
+      //   insertBefore: this.insertBefore
+      // });
 
       await this.plugin.orderManager.moveH2BetweenH1s(
         draggedFileNode.filePath,
@@ -1443,6 +1447,11 @@ export class TreeView extends ItemView {
 
         // 刷新视图
         await this.smartUpdate();
+
+        // 刷新编辑器高亮(删除H1会删除其下所有H2关键字)
+        if (this.plugin.highlightManager) {
+          this.plugin.highlightManager.refreshCurrentEditor();
+        }
       }
     );
 
@@ -1508,6 +1517,11 @@ export class TreeView extends ItemView {
 
         // 刷新视图
         await this.smartUpdate();
+
+        // 刷新编辑器高亮
+        if (this.plugin.highlightManager) {
+          this.plugin.highlightManager.refreshCurrentEditor();
+        }
       }
     );
 
@@ -1563,6 +1577,11 @@ export class TreeView extends ItemView {
 
         // 刷新视图
         await this.smartUpdate();
+
+        // 刷新编辑器高亮
+        if (this.plugin.highlightManager) {
+          this.plugin.highlightManager.refreshCurrentEditor();
+        }
       }
     );
 
@@ -1634,6 +1653,11 @@ export class TreeView extends ItemView {
 
         // 刷新视图
         await this.smartUpdate();
+
+        // 刷新编辑器高亮
+        if (this.plugin.highlightManager) {
+          this.plugin.highlightManager.refreshCurrentEditor();
+        }
       }
     );
 

@@ -21,9 +21,6 @@ export class HighlightManager {
    * 获取当前文件对应的设定库路径
    */
   getSettingFolderForFile(filePath: string): string | null {
-    console.log("检查文件路径:", filePath);
-    console.log("当前对应关系:", this.plugin.settings.folderMappings);
-
     // 检查文件是否在某个小说库中
     for (const mapping of this.plugin.settings.folderMappings) {
       if (mapping.novelFolder && mapping.settingFolder) {
@@ -31,17 +28,12 @@ export class HighlightManager {
         const normalizedNovelFolder = mapping.novelFolder.replace(/^\/+|\/+$/g, '');
         const normalizedFilePath = filePath.replace(/^\/+/, '');
 
-        console.log("检查映射:", normalizedNovelFolder, "->", mapping.settingFolder);
-        console.log("文件路径是否匹配:", normalizedFilePath.startsWith(normalizedNovelFolder + "/"));
-
         if (normalizedFilePath.startsWith(normalizedNovelFolder + "/")) {
-          console.log("找到匹配的设定库:", mapping.settingFolder);
           return mapping.settingFolder;
         }
       }
     }
 
-    console.log("未找到匹配的设定库");
     return null;
   }
 
@@ -94,6 +86,36 @@ export class HighlightManager {
   }
 
   /**
+   * 强制刷新当前编辑器的高亮
+   */
+  refreshCurrentEditor(): void {
+    // 清除缓存
+    this.clearCache();
+
+    // 触发编辑器重新渲染
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView && activeView.editor) {
+      // 保存当前状态
+      const cursor = activeView.editor.getCursor();
+      const content = activeView.editor.getValue();
+
+      // 使用 Obsidian Editor 的 setValue 方法
+      // 这会触发完整的编辑器更新,包括所有扩展
+      activeView.editor.setValue("");
+
+      // 延迟后恢复内容
+      setTimeout(() => {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view && view.editor) {
+          view.editor.setValue(content);
+          // 恢复光标位置
+          view.editor.setCursor(cursor);
+        }
+      }, 10);
+    }
+  }
+
+  /**
    * 创建编辑器扩展
    */
   createEditorExtension() {
@@ -142,6 +164,9 @@ export class HighlightManager {
           // 收集所有匹配位置
           const matches: { from: number; to: number }[] = [];
 
+          // 获取高亮模式
+          const highlightMode = manager.plugin.settings.highlightStyle.mode;
+
           // 为每个关键字查找匹配
           for (const keyword of keywords) {
             // 转义特殊字符
@@ -149,11 +174,19 @@ export class HighlightManager {
             const regex = new RegExp(escapedKeyword, 'g');
 
             let match;
+            let foundFirst = false;
             while ((match = regex.exec(text)) !== null) {
+              // 如果是首次高亮模式,只添加第一个匹配
+              if (highlightMode === "first" && foundFirst) {
+                continue;
+              }
+
               matches.push({
                 from: match.index,
                 to: match.index + keyword.length
               });
+
+              foundFirst = true;
             }
           }
 

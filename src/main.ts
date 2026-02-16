@@ -57,6 +57,18 @@ export default class ChineseWriterPlugin extends Plugin {
     // 添加设置面板
     this.addSettingTab(new ChineseWriterSettingTab(this.app, this));
 
+    // 等待 workspace 布局加载完成后初始化高亮
+    this.app.workspace.onLayoutReady(() => {
+      // 延迟一小段时间确保编辑器完全加载
+      setTimeout(() => {
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (activeView && activeView.file) {
+          // 触发一次编辑器刷新以显示高亮
+          this.highlightManager.refreshCurrentEditor();
+        }
+      }, 100);
+    });
+
     // 监听文件变化事件
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
@@ -181,6 +193,15 @@ export default class ChineseWriterPlugin extends Plugin {
   async loadSettings() {
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+
+    // 确保 highlightStyle 的所有字段都有默认值（兼容旧版本）
+    if (this.settings.highlightStyle) {
+      this.settings.highlightStyle = Object.assign(
+        {},
+        DEFAULT_SETTINGS.highlightStyle,
+        this.settings.highlightStyle
+      );
+    }
 
     // 迁移旧的 targetFolder 配置（如果存在）
     if (data && data.targetFolder && this.settings.folderMappings.length === 0) {

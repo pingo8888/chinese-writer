@@ -14,9 +14,16 @@ export interface FolderMapping {
 }
 
 /**
+ * 高亮模式
+ */
+export type HighlightMode = "first" | "all";
+
+/**
  * 高亮样式配置
  */
 export interface HighlightStyle {
+  /** 高亮模式 (first: 首次高亮, all: 全部高亮) */
+  mode: HighlightMode;
   /** 背景色 */
   backgroundColor: string;
   /** 边框样式 (solid, dashed, dotted, double) */
@@ -49,7 +56,8 @@ export interface ChineseWriterSettings {
 export const DEFAULT_SETTINGS: ChineseWriterSettings = {
   folderMappings: [],
   highlightStyle: {
-    backgroundColor: "#FFFFF00",
+    mode: "all",
+    backgroundColor: "#FFFF00",
     borderStyle: "dotted",
     borderWidth: 2,
     borderColor: "#4A86E9",
@@ -64,6 +72,7 @@ export const DEFAULT_SETTINGS: ChineseWriterSettings = {
  */
 export class ChineseWriterSettingTab extends PluginSettingTab {
   plugin: ChineseWriterPlugin;
+  private isAddingMapping = false;
 
   constructor(app: App, plugin: ChineseWriterPlugin) {
     super(app, plugin);
@@ -79,7 +88,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
 
     // 文件夹对应关系设置
     containerEl.createEl("h3", { text: "文件夹对应关系" });
-    containerEl.createEl("p", { 
+    containerEl.createEl("p", {
       text: "配置小说库和设定库的对应关系。在小说库文件打开时，会显示对应设定库的内容，并高亮关键字。",
       cls: "setting-item-description"
     });
@@ -95,8 +104,11 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
         button
           .setButtonText("添加")
           .setCta()
-          .onClick(async () => {
-            await this.addNewMapping();
+          .onClick(() => {
+            if (this.isAddingMapping) {
+              return; // 防止重复点击
+            }
+            this.addNewMapping();
           })
       );
 
@@ -104,11 +116,26 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "关键字高亮样式" });
 
     new Setting(containerEl)
+      .setName("高亮模式")
+      .setDesc("选择关键字的高亮方式")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("first", "首次高亮")
+          .addOption("all", "全部高亮")
+          .setValue(this.plugin.settings.highlightStyle.mode)
+          .onChange(async (value: HighlightMode) => {
+            this.plugin.settings.highlightStyle.mode = value;
+            await this.plugin.saveSettings();
+            this.refreshEditorHighlight();
+          })
+      );
+
+    new Setting(containerEl)
       .setName("背景色")
-      .setDesc("高亮关键字的背景颜色（支持8位HEX，如 #FFFFF00，最后两位为透明度）")
+      .setDesc("高亮关键字的背景颜色（支持8位HEX，如 #FFFF00FF，最后两位为透明度）")
       .addText((text) =>
         text
-          .setPlaceholder("#FFFFF00")
+          .setPlaceholder("#FFFF00")
           .setValue(this.plugin.settings.highlightStyle.backgroundColor)
           .onChange(async (value) => {
             this.plugin.settings.highlightStyle.backgroundColor = value;
@@ -215,7 +242,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
     container.empty();
 
     if (this.plugin.settings.folderMappings.length === 0) {
-      container.createEl("p", { 
+      container.createEl("p", {
         text: "暂无对应关系，请点击下方按钮添加。",
         cls: "setting-item-description"
       });
@@ -224,7 +251,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
 
     this.plugin.settings.folderMappings.forEach((mapping, index) => {
       const displayText = `${mapping.novelFolder || "未设置"} → ${mapping.settingFolder || "未设置"}`;
-      
+
       new Setting(container)
         .setName(displayText)
         .setClass("folder-mapping-item")
@@ -240,10 +267,11 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
             .setButtonText("删除")
             .setWarning()
             .onClick(async () => {
-              this.plugin.settings.folderMappings = 
+              this.plugin.settings.folderMappings =
                 this.plugin.settings.folderMappings.filter(m => m.id !== mapping.id);
               await this.plugin.saveSettings();
               await this.plugin.refreshView();
+              this.refreshEditorHighlight();
               this.display();
             })
         );
@@ -255,7 +283,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
    */
   private async editMapping(mapping: FolderMapping): Promise<void> {
     const { TextInputModal } = await import("./modals");
-    
+
     // 第一次弹出：编辑小说库路径
     new TextInputModal(
       this.app,
@@ -285,7 +313,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
               mapping.settingFolder = settingFolder.trim();
 
               await this.plugin.saveSettings();
-              
+
               // 延迟刷新界面和编辑器，确保弹出框完全关闭
               setTimeout(async () => {
                 await this.plugin.refreshView();
@@ -303,8 +331,13 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
    * 添加新的对应关系（使用两次弹出输入框）
    */
   private async addNewMapping(): Promise<void> {
+    if (this.isAddingMapping) {
+      return; // 防止重复调用
+    }
+
+    this.isAddingMapping = true;
     const { TextInputModal } = await import("./modals");
-    
+
     // 第一次弹出：输入小说库路径
     new TextInputModal(
       this.app,
@@ -313,6 +346,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       "",
       async (novelFolder) => {
         if (!novelFolder.trim()) {
+          this.isAddingMapping = false;
           return;
         }
 
@@ -326,6 +360,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
             "",
             async (settingFolder) => {
               if (!settingFolder.trim()) {
+                this.isAddingMapping = false;
                 return;
               }
 
@@ -338,12 +373,13 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
 
               this.plugin.settings.folderMappings.push(newMapping);
               await this.plugin.saveSettings();
-              
+
               // 延迟刷新界面和编辑器，确保弹出框完全关闭
               setTimeout(async () => {
                 await this.plugin.refreshView();
                 this.refreshEditorHighlight();
                 this.display();
+                this.isAddingMapping = false; // 完成后重置标志
               }, 50);
             }
           ).open();
@@ -366,14 +402,9 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
    * 刷新编辑器高亮
    */
   private refreshEditorHighlight(): void {
-    // 清除关键字缓存
+    // 清除关键字缓存并强制刷新编辑器
     if (this.plugin.highlightManager) {
-      this.plugin.highlightManager.clearCache();
+      this.plugin.highlightManager.refreshCurrentEditor();
     }
-    
-    // 触发编辑器刷新
-    setTimeout(() => {
-      this.app.workspace.updateOptions();
-    }, 100);
   }
 }
