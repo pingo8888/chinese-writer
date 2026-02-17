@@ -6,16 +6,21 @@ import type { OrderData, H1Info, H2Info } from "./types";
  */
 export class OrderManager {
   private app: App;
-  private orderFilePath: string;
+  private viewDataFilePath: string;
+  private legacyViewDataFilePath: string;
+  private legacyOrderFilePath: string;
   private orderData: OrderData;
   private saveTimeout: NodeJS.Timeout | null = null;
   private isSaving: boolean = false;
 
   constructor(app: App, pluginDir: string) {
     this.app = app;
-    this.orderFilePath = `${pluginDir}/order.json`;
+    this.viewDataFilePath = `${pluginDir}/cw-view-datas.json`;
+    this.legacyViewDataFilePath = `${pluginDir}/view-datas.json`;
+    this.legacyOrderFilePath = `${pluginDir}/order.json`;
     this.orderData = {
       files: [],
+      expandedStatesByFolder: {},
     };
   }
 
@@ -24,15 +29,58 @@ export class OrderManager {
    */
   async load(): Promise<void> {
     try {
-      const file = this.app.vault.getAbstractFileByPath(this.orderFilePath);
-      if (file instanceof TFile) {
-        const content = await this.app.vault.read(file);
-        this.orderData = JSON.parse(content);
+      const adapter = this.app.vault.adapter;
+      const hasViewDataFile = await adapter.exists(this.viewDataFilePath);
+      const hasLegacyViewDataFile = await adapter.exists(this.legacyViewDataFilePath);
+      const hasLegacyOrderFile = await adapter.exists(this.legacyOrderFilePath);
+      let targetPath = this.viewDataFilePath;
+
+      if (!hasViewDataFile && hasLegacyViewDataFile) {
+        targetPath = this.legacyViewDataFilePath;
+      } else if (!hasViewDataFile && hasLegacyOrderFile) {
+        targetPath = this.legacyOrderFilePath;
+      }
+
+      const exists = await adapter.exists(targetPath);
+      if (!exists) {
+        this.orderData = { files: [], expandedStatesByFolder: {} };
+        return;
+      }
+
+      const content = await adapter.read(targetPath);
+      const parsed = JSON.parse(content) as Partial<OrderData> | null;
+      const files = Array.isArray(parsed?.files)
+        ? parsed!.files.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+      const expandedStatesByFolder: Record<string, Record<string, boolean>> = {};
+      if (parsed?.expandedStatesByFolder && typeof parsed.expandedStatesByFolder === "object") {
+        for (const [folder, folderStates] of Object.entries(parsed.expandedStatesByFolder)) {
+          if (!folderStates || typeof folderStates !== "object") continue;
+          const filteredStates: Record<string, boolean> = {};
+          for (const [key, value] of Object.entries(folderStates as Record<string, unknown>)) {
+            if (typeof value !== "boolean") continue;
+            // H2 没有展开/折叠按钮，不保留其状态
+            if (key.includes(">>h2:")) continue;
+            filteredStates[key] = value;
+          }
+          expandedStatesByFolder[folder] = filteredStates;
+        }
+      }
+
+      this.orderData = { files, expandedStatesByFolder };
+
+      // 兼容迁移：若读取的是旧文件，写回新 cw-view-datas.json
+      if (targetPath === this.legacyOrderFilePath && !hasViewDataFile) {
+        await this.saveNow();
+      }
+      if (targetPath === this.legacyViewDataFilePath && !hasViewDataFile) {
+        await this.saveNow();
       }
     } catch (error) {
       // 文件不存在或解析失败，使用默认值
       this.orderData = {
         files: [],
+        expandedStatesByFolder: {},
       };
     }
   }
@@ -72,17 +120,17 @@ export class OrderManager {
 
       // 使用 adapter 直接写入，更可靠
       const adapter = this.app.vault.adapter;
-      const exists = await adapter.exists(this.orderFilePath);
+      const exists = await adapter.exists(this.viewDataFilePath);
 
       if (exists) {
-        await adapter.write(this.orderFilePath, content);
+        await adapter.write(this.viewDataFilePath, content);
       } else {
         // 确保父目录存在
-        const parentDir = this.orderFilePath.substring(0, this.orderFilePath.lastIndexOf('/'));
+        const parentDir = this.viewDataFilePath.substring(0, this.viewDataFilePath.lastIndexOf('/'));
         if (parentDir && !(await adapter.exists(parentDir))) {
           await adapter.mkdir(parentDir);
         }
-        await adapter.write(this.orderFilePath, content);
+        await adapter.write(this.viewDataFilePath, content);
       }
     } catch (error) {
       console.error("Failed to save order data:", error);
@@ -103,6 +151,22 @@ export class OrderManager {
    */
   async setFileOrder(filePaths: string[]): Promise<void> {
     this.orderData.files = filePaths;
+    await this.save();
+  }
+
+  getExpandedStates(settingFolder: string): Record<string, boolean> {
+    return this.orderData.expandedStatesByFolder[settingFolder] ?? {};
+  }
+
+  async setExpandedStates(settingFolder: string, states: Record<string, boolean>): Promise<void> {
+    this.orderData.expandedStatesByFolder[settingFolder] = states;
+    await this.save();
+  }
+
+  async removeFolderData(settingFolder: string): Promise<void> {
+    if (this.orderData.expandedStatesByFolder[settingFolder]) {
+      delete this.orderData.expandedStatesByFolder[settingFolder];
+    }
     await this.save();
   }
 

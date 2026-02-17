@@ -349,6 +349,9 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
             .setButtonText("删除")
             .setWarning()
             .onClick(async () => {
+              if (mapping.settingFolder) {
+                await this.plugin.orderManager.removeFolderData(mapping.settingFolder);
+              }
               this.plugin.settings.folderMappings =
                 this.plugin.settings.folderMappings.filter(m => m.id !== mapping.id);
               await this.plugin.saveSettings();
@@ -365,6 +368,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
    */
   private async editMapping(mapping: FolderMapping): Promise<void> {
     const { TextInputModal } = await import("./modals");
+    const oldSettingFolder = mapping.settingFolder;
 
     // 第一次弹出：编辑小说库路径
     new TextInputModal(
@@ -394,6 +398,9 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
               mapping.novelFolder = novelFolder.trim();
               mapping.settingFolder = settingFolder.trim();
 
+              if (oldSettingFolder) {
+                await this.plugin.orderManager.removeFolderData(oldSettingFolder);
+              }
               await this.plugin.saveSettings();
 
               // 延迟刷新界面和编辑器，确保弹出框完全关闭

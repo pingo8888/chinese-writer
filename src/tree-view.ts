@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, setIcon, Menu, TFile } from "obsidian";
+import { ItemView, WorkspaceLeaf, setIcon, Menu, TFile, MarkdownView } from "obsidian";
 import type ChineseWriterPlugin from "./main";
 import type { TreeNode, FileParseResult } from "./types";
 import { TextInputModal, ConfirmModal } from "./modals";
@@ -13,6 +13,7 @@ export class TreeView extends ItemView {
   private treeData: TreeNode[] = [];
   private allExpanded: boolean = false;
   private lastObservedActiveFilePath: string | null = null;
+  private currentSettingFolder: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ChineseWriterPlugin) {
     super(leaf);
@@ -33,12 +34,15 @@ export class TreeView extends ItemView {
 
   async onOpen(): Promise<void> {
     await this.refresh();
-    this.lastObservedActiveFilePath = this.app.workspace.getActiveFile()?.path ?? null;
+    this.lastObservedActiveFilePath = this.getContextFile()?.path ?? null;
 
     // 监听活动文件变化
     this.registerEvent(
-      this.app.workspace.on("active-leaf-change", async () => {
-        const currentPath = this.app.workspace.getActiveFile()?.path ?? null;
+      this.app.workspace.on("active-leaf-change", async (leaf) => {
+        let currentPath = this.lastObservedActiveFilePath;
+        if (leaf?.view instanceof MarkdownView) {
+          currentPath = leaf.view.file?.path ?? null;
+        }
         if (currentPath === this.lastObservedActiveFilePath) {
           return;
         }
@@ -72,7 +76,7 @@ export class TreeView extends ItemView {
     setIcon(iconEl, "folder");
 
     // 获取当前显示的文件夹路径
-    const activeFile = this.app.workspace.getActiveFile();
+    const activeFile = this.getContextFile();
     let displayFolder = "未设置目录";
 
     if (activeFile) {
@@ -128,6 +132,7 @@ export class TreeView extends ItemView {
   async smartUpdate(): Promise<void> {
     // 保存当前所有节点的展开状态
     const expandedStates = this.saveExpandedStates();
+    await this.persistExpandedStatesForCurrentFolder(expandedStates);
 
     // 重新加载数据
     await this.loadData();
@@ -138,6 +143,7 @@ export class TreeView extends ItemView {
     // 只更新内容，不重建整个 DOM
     const container = this.containerEl.children[1];
     if (!container) return;
+    this.updateHeaderFolderName(container as HTMLElement);
 
     const treeContainer = container.querySelector(".chinese-writer-tree-container");
     if (!treeContainer) return;
@@ -161,13 +167,15 @@ export class TreeView extends ItemView {
    */
   private collectExpandedStates(nodes: TreeNode[], states: Map<string, boolean>, parentKey: string = ""): void {
     nodes.forEach((node) => {
+      if (node.children.length === 0) {
+        return;
+      }
+
       // 使用层级路径作为唯一标识
       const key = this.getNodeKey(node, parentKey);
       states.set(key, node.expanded);
 
-      if (node.children.length > 0) {
-        this.collectExpandedStates(node.children, states, key);
-      }
+      this.collectExpandedStates(node.children, states, key);
     });
   }
 
@@ -221,14 +229,16 @@ export class TreeView extends ItemView {
    * 加载数据
    */
   async loadData(): Promise<void> {
-    // 获取当前活动文件
-    const activeFile = this.app.workspace.getActiveFile();
+    // 获取当前上下文文件（活动文件或最近 Markdown 文件）
+    const activeFile = this.getContextFile();
     let folderPath: string | null = null;
 
     // 如果有活动文件，检查是否在某个小说库中
     if (activeFile) {
       folderPath = this.plugin.highlightManager.getSettingFolderForFile(activeFile.path);
     }
+
+    this.currentSettingFolder = folderPath;
 
     if (!folderPath) {
       this.treeData = [];
@@ -271,6 +281,12 @@ export class TreeView extends ItemView {
     for (const parseResult of parseResults) {
       const fileNode = this.createFileNode(parseResult, fileIndex++);
       this.treeData.push(fileNode);
+    }
+
+    const persistedStates = this.plugin.orderManager.getExpandedStates(folderPath);
+    const persistedEntries = Object.entries(persistedStates);
+    if (persistedEntries.length > 0) {
+      this.restoreExpandedStates(new Map<string, boolean>(persistedEntries));
     }
   }
 
@@ -470,6 +486,8 @@ export class TreeView extends ItemView {
     if (childrenUl) {
       childrenUl.style.display = node.expanded ? "block" : "none";
     }
+
+    void this.persistExpandedStatesForCurrentFolder();
   }
 
   /**
@@ -494,6 +512,8 @@ export class TreeView extends ItemView {
         this.allExpanded ? "list-chevrons-down-up" : "list-chevrons-up-down"
       );
     }
+
+    void this.persistExpandedStatesForCurrentFolder();
   }
 
   /**
@@ -585,6 +605,40 @@ export class TreeView extends ItemView {
   private onNodeClick(node: TreeNode): void {
     // 可以在这里添加点击节点后的行为
     // 例如：跳转到对应的文件位置
+  }
+
+  private getContextFile(): TFile | null {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile) {
+      return activeFile;
+    }
+
+    if (this.lastObservedActiveFilePath) {
+      const abstractFile = this.app.vault.getAbstractFileByPath(this.lastObservedActiveFilePath);
+      if (abstractFile instanceof TFile) {
+        return abstractFile;
+      }
+    }
+
+    return null;
+  }
+
+  private updateHeaderFolderName(container: HTMLElement): void {
+    const folderNameEl = container.querySelector(".chinese-writer-folder-name") as HTMLElement | null;
+    if (!folderNameEl) return;
+    folderNameEl.setText(this.currentSettingFolder ?? "未设置目录");
+  }
+
+  private async persistExpandedStatesForCurrentFolder(
+    states?: Map<string, boolean>
+  ): Promise<void> {
+    if (!this.currentSettingFolder) return;
+    const mapToSave = states ?? this.saveExpandedStates();
+    const serializedStates: Record<string, boolean> = {};
+    mapToSave.forEach((value, key) => {
+      serializedStates[key] = value;
+    });
+    await this.plugin.orderManager.setExpandedStates(this.currentSettingFolder, serializedStates);
   }
 
   // ========== 拖放功能 ==========

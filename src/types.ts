@@ -60,4 +60,6 @@ export interface FileParseResult {
 export interface OrderData {
   /** 文件排序：文件路径数组 */
   files: string[];
+  /** 各设定库目录对应的节点展开状态 */
+  expandedStatesByFolder: Record<string, Record<string, boolean>>;
 }

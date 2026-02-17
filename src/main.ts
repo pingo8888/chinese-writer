@@ -13,8 +13,13 @@ export default class ChineseWriterPlugin extends Plugin {
   parser: FileParser;
   orderManager: OrderManager;
   highlightManager: HighlightManager;
+  private pluginDir = "";
+  private settingsFilePath = "";
 
   async onload() {
+    this.pluginDir = await this.resolvePluginDir();
+    this.settingsFilePath = `${this.pluginDir}/cw-setting.json`;
+
     // 加载设置
     await this.loadSettings();
 
@@ -22,7 +27,7 @@ export default class ChineseWriterPlugin extends Plugin {
     this.parser = new FileParser(this.app.vault);
 
     // 初始化排序管理器
-    this.orderManager = new OrderManager(this.app, this.manifest.dir || "");
+    this.orderManager = new OrderManager(this.app, this.pluginDir);
     await this.orderManager.load();
 
     // 初始化高亮管理器
@@ -186,7 +191,7 @@ export default class ChineseWriterPlugin extends Plugin {
    * 加载设置
    */
   async loadSettings() {
-    const data = await this.loadData();
+    const data = await this.readSettingsData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 
     // 确保 highlightStyle 的所有字段都有默认值（兼容旧版本）
@@ -231,7 +236,89 @@ export default class ChineseWriterPlugin extends Plugin {
    * 保存设置
    */
   async saveSettings() {
-    await this.saveData(this.settings);
+    const adapter = this.app.vault.adapter;
+    const parentDir = this.settingsFilePath.substring(0, this.settingsFilePath.lastIndexOf("/"));
+    if (parentDir && !(await adapter.exists(parentDir))) {
+      await adapter.mkdir(parentDir);
+    }
+    await adapter.write(this.settingsFilePath, JSON.stringify(this.settings, null, 2));
+  }
+
+  private async resolvePluginDir(): Promise<string> {
+    const adapter = this.app.vault.adapter;
+    const manifestDir = this.manifest.dir?.trim();
+    const id = this.manifest.id?.trim() ?? "";
+    const lowerId = id.toLowerCase();
+
+    const candidates = Array.from(
+      new Set(
+        [
+          manifestDir,
+          id ? `.obsidian/plugins/${id}` : null,
+          lowerId ? `.obsidian/plugins/${lowerId}` : null,
+        ].filter((item): item is string => !!item && item.length > 0)
+      )
+    );
+
+    // 优先：能找到现有 settings/view 数据文件的目录
+    for (const dir of candidates) {
+      if (
+        (await adapter.exists(`${dir}/cw-setting.json`)) ||
+        (await adapter.exists(`${dir}/cw-view-datas.json`)) ||
+        (await adapter.exists(`${dir}/settings.json`)) ||
+        (await adapter.exists(`${dir}/data.json`)) ||
+        (await adapter.exists(`${dir}/view-datas.json`)) ||
+        (await adapter.exists(`${dir}/order.json`))
+      ) {
+        return dir;
+      }
+    }
+
+    // 次优：目录本身存在
+    for (const dir of candidates) {
+      if (await adapter.exists(dir)) {
+        return dir;
+      }
+    }
+
+    // 其次：manifest.dir 存在则使用
+    if (manifestDir && manifestDir.length > 0) {
+      return manifestDir;
+    }
+
+    // 最后：默认回退到小写 id 目录
+    return `.obsidian/plugins/${lowerId || "chinese-writer"}`;
+  }
+
+  private async readSettingsData(): Promise<Record<string, unknown>> {
+    const adapter = this.app.vault.adapter;
+    const settingsPath = `${this.pluginDir}/cw-setting.json`;
+    const legacySettingsPath = `${this.pluginDir}/settings.json`;
+    const legacyDataPath = `${this.pluginDir}/data.json`;
+
+    try {
+      if (await adapter.exists(settingsPath)) {
+        const content = await adapter.read(settingsPath);
+        const parsed = JSON.parse(content);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      }
+
+      if (await adapter.exists(legacySettingsPath)) {
+        const content = await adapter.read(legacySettingsPath);
+        const parsed = JSON.parse(content);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      }
+
+      if (await adapter.exists(legacyDataPath)) {
+        const content = await adapter.read(legacyDataPath);
+        const parsed = JSON.parse(content);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      }
+    } catch (error) {
+      console.error("Failed to read settings data:", error);
+    }
+
+    return {};
   }
 
   /**
@@ -284,6 +371,12 @@ export default class ChineseWriterPlugin extends Plugin {
   private findOpenedLeafForFile(filePath: string) {
     const markdownLeaves = this.app.workspace.getLeavesOfType("markdown");
     for (const leaf of markdownLeaves) {
+      const viewState = leaf.getViewState();
+      const stateFile = typeof viewState.state?.file === "string" ? viewState.state.file : null;
+      if (stateFile === filePath) {
+        return leaf;
+      }
+
       const view = leaf.view;
       if (view instanceof MarkdownView && view.file?.path === filePath) {
         return leaf;
