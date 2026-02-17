@@ -592,6 +592,16 @@ export class HighlightManager {
   }
 
   /**
+   * 判断文件是否位于指定目录下
+   */
+  private isFileInFolder(filePath: string, folderPath: string): boolean {
+    const normalizedFolder = folderPath.replace(/^\/+|\/+$/g, "");
+    const normalizedFilePath = filePath.replace(/^\/+/, "");
+    if (!normalizedFolder) return false;
+    return normalizedFilePath.startsWith(normalizedFolder + "/");
+  }
+
+  /**
    * 收集需要标记的常见标点位置
    */
   private collectPunctuationWarnings(text: string): number[] {
@@ -666,6 +676,7 @@ export class HighlightManager {
         decorations: DecorationSet = Decoration.none;
         currentFile: TFile | null = null;
         keywordsVersionSeen = -1;
+        updateRunId = 0;
 
         constructor(view: EditorView) {
           this.keywordsVersionSeen = manager.getKeywordsVersion();
@@ -673,10 +684,14 @@ export class HighlightManager {
         }
 
         async updateDecorations(view: EditorView) {
+          const runId = ++this.updateRunId;
+
           // 获取当前编辑器对应的 Markdown 视图
           const markdownView = manager.getMarkdownViewForEditorView(view);
           if (!markdownView || !markdownView.file) {
-            this.decorations = Decoration.none;
+            if (runId === this.updateRunId) {
+              this.decorations = Decoration.none;
+            }
             return;
           }
 
@@ -687,12 +702,25 @@ export class HighlightManager {
           // 获取对应的设定库
           const settingFolder = manager.getSettingFolderForFile(file.path);
           if (!settingFolder) {
-            this.decorations = Decoration.none;
+            if (runId === this.updateRunId) {
+              this.decorations = Decoration.none;
+            }
+            return;
+          }
+
+          // 若当前文件本身就在对应设定库中，则跳过关键字高亮和标点检测
+          if (manager.isFileInFolder(file.path, settingFolder)) {
+            if (runId === this.updateRunId) {
+              this.decorations = Decoration.none;
+            }
             return;
           }
 
           // 提取关键字
           const keywords = await manager.extractKeywordsFromSettingFolder(settingFolder);
+          if (runId !== this.updateRunId) {
+            return;
+          }
 
           // 创建装饰器
           const builder = new RangeSetBuilder<Decoration>();
@@ -737,33 +765,43 @@ export class HighlightManager {
               })()
               : matches;
 
-          // 按位置排序并添加装饰器
-          finalMatches.sort((a, b) => a.from - b.from);
+          // 合并所有装饰范围并统一排序，避免 RangeSetBuilder 因插入顺序报错
+          const decorationRanges: Array<{ from: number; to: number; decoration: Decoration }> = [];
 
+          finalMatches.sort((a, b) => a.from - b.from);
           for (const match of finalMatches) {
-            builder.add(
-              match.from,
-              match.to,
-              Decoration.mark({
+            decorationRanges.push({
+              from: match.from,
+              to: match.to,
+              decoration: Decoration.mark({
                 class: "chinese-writer-highlight",
                 attributes: {
                   "data-cw-keyword": match.keyword,
                   "data-cw-setting-folder": settingFolder,
                 },
-              })
-            );
+              }),
+            });
           }
 
           // 标点检测装饰器（仅在开启且当前文件属于已配置小说库时生效）
           const punctuationWarnings = manager.collectPunctuationWarnings(text);
           for (const index of punctuationWarnings) {
-            builder.add(
-              index,
-              index + 1,
-              Decoration.mark({
+            decorationRanges.push({
+              from: index,
+              to: index + 1,
+              decoration: Decoration.mark({
                 class: "chinese-writer-punctuation-warning",
-              })
-            );
+              }),
+            });
+          }
+
+          decorationRanges.sort((a, b) => {
+            if (a.from !== b.from) return a.from - b.from;
+            return a.to - b.to;
+          });
+
+          for (const range of decorationRanges) {
+            builder.add(range.from, range.to, range.decoration);
           }
 
           this.decorations = builder.finish();
@@ -777,7 +815,12 @@ export class HighlightManager {
         update(update: ViewUpdate) {
           // 文档变化或关键字缓存失效时，重新计算装饰器
           const keywordsChanged = this.keywordsVersionSeen !== manager.getKeywordsVersion();
-          if (update.docChanged || keywordsChanged) {
+          const markdownView = manager.getMarkdownViewForEditorView(update.view);
+          const currentFilePath = markdownView?.file?.path ?? null;
+          const previousFilePath = this.currentFile?.path ?? null;
+          const fileChanged = currentFilePath !== previousFilePath;
+
+          if (update.docChanged || keywordsChanged || fileChanged) {
             this.updateDecorations(update.view);
           }
         }

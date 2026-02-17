@@ -760,8 +760,13 @@ export default class ChineseWriterPlugin extends Plugin {
       const lines = content.split("\n");
       for (const line of lines) {
         const trimmed = line.trim();
-        if (trimmed.startsWith("### ") && !trimmed.startsWith("#### ")) {
-          const title = trimmed.slice(4).trim();
+        // 兼容右栏第三级设定标题：Markdown 的 "## "，
+        // 同时保留对 "### " 标题的匹配，避免历史行为回退。
+        const isH2Title = trimmed.startsWith("## ") && !trimmed.startsWith("### ");
+        const isH3Title = trimmed.startsWith("### ") && !trimmed.startsWith("#### ");
+        if (isH2Title || isH3Title) {
+          const levelPrefixLength = isH2Title ? 3 : 4;
+          const title = trimmed.slice(levelPrefixLength).replace(/\s+/g, " ").trim();
           if (title) titleSet.add(title);
         }
       }
@@ -772,7 +777,8 @@ export default class ChineseWriterPlugin extends Plugin {
   private hasH3InSettingFolder(settingFolder: string, selectedText: string): boolean {
     const cachedTitles = this.h3TitleCacheByFolder.get(settingFolder);
     if (!cachedTitles) return false;
-    return cachedTitles.has(selectedText.trim());
+    const normalizedSelection = selectedText.replace(/\s+/g, " ").trim();
+    return cachedTitles.has(normalizedSelection);
   }
 
   private updateH3CacheForSettingFile(filePath: string): void {

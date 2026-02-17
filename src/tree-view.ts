@@ -1094,7 +1094,7 @@ export class TreeView extends ItemView {
     menu.addItem((item) => {
       item
         .setTitle("创建集合")
-        .setIcon("file-plus")
+        .setIcon("file-text")
         .onClick(async () => {
           await this.createFile();
         });
