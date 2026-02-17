@@ -1,4 +1,4 @@
-import { Plugin, TFile, MarkdownView, WorkspaceLeaf } from "obsidian";
+import { Plugin, TFile, MarkdownView, WorkspaceLeaf, setIcon, Notice } from "obsidian";
 import { ChineseWriterSettings, DEFAULT_SETTINGS, ChineseWriterSettingTab } from "./settings";
 import { FileParser } from "./parser";
 import { TreeView, VIEW_TYPE_TREE } from "./tree-view";
@@ -15,6 +15,11 @@ export default class ChineseWriterPlugin extends Plugin {
   highlightManager: HighlightManager;
   private pluginDir = "";
   private settingsFilePath = "";
+  private settingMenuRootEl: HTMLElement | null = null;
+  private settingMenuChildEl: HTMLElement | null = null;
+  private settingMenuCloseTimer: number | null = null;
+  private settingMenuExpandDirection: "right" | "left" = "right";
+  private h3TitleCacheByFolder: Map<string, Set<string>> = new Map();
 
   async onload() {
     this.pluginDir = await this.resolvePluginDir();
@@ -29,6 +34,7 @@ export default class ChineseWriterPlugin extends Plugin {
     // 初始化排序管理器
     this.orderManager = new OrderManager(this.app, this.pluginDir);
     await this.orderManager.load();
+    await this.rebuildAllH3TitleCache();
 
     // 初始化高亮管理器
     this.highlightManager = new HighlightManager(this);
@@ -61,6 +67,14 @@ export default class ChineseWriterPlugin extends Plugin {
 
     // 添加设置面板
     this.addSettingTab(new ChineseWriterSettingTab(this.app, this));
+    this.register(() => this.closeSettingSubmenus());
+
+    // 编辑器右键菜单：添加设定（两级悬浮子菜单）
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor, info) => {
+        void this.appendAddSettingEditorMenu(menu, editor, info);
+      })
+    );
 
     // 等待 workspace 布局加载完成后初始化高亮
     this.app.workspace.onLayoutReady(() => {
@@ -80,6 +94,7 @@ export default class ChineseWriterPlugin extends Plugin {
         // 当文件被修改时，智能更新视图（保持展开状态）
         if (file instanceof TFile && file.extension === "md") {
           this.smartUpdateView();
+          this.updateH3CacheForSettingFile(file.path);
 
           // 如果修改的是设定库中的文件，清除关键字缓存并刷新编辑器
           for (const mapping of this.settings.folderMappings) {
@@ -102,6 +117,7 @@ export default class ChineseWriterPlugin extends Plugin {
         // 当新文件被创建时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
           this.syncOrderOnFileCreate(file);
+          this.updateH3CacheForSettingFile(file.path);
         }
       })
     );
@@ -111,6 +127,7 @@ export default class ChineseWriterPlugin extends Plugin {
         // 当文件被删除时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
           this.syncOrderOnFileDelete(file);
+          this.updateH3CacheForSettingFile(file.path);
         }
       })
     );
@@ -120,6 +137,8 @@ export default class ChineseWriterPlugin extends Plugin {
         // 当文件被重命名时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
           this.syncOrderOnFileRename(file, oldPath);
+          this.updateH3CacheForSettingFile(oldPath);
+          this.updateH3CacheForSettingFile(file.path);
         }
       })
     );
@@ -380,6 +399,378 @@ export default class ChineseWriterPlugin extends Plugin {
       const view = leaf.view;
       if (view instanceof MarkdownView && view.file?.path === filePath) {
         return leaf;
+      }
+    }
+    return null;
+  }
+
+  private appendAddSettingEditorMenu(
+    menu: { addSeparator: () => unknown; addItem: (cb: (item: any) => void) => unknown },
+    editor: { getSelection: () => string },
+    info: unknown
+  ): void {
+    const selectedTextRaw = editor.getSelection();
+    const selectedText = selectedTextRaw.replace(/\s+/g, " ").trim();
+    if (!selectedText) return;
+
+    const file = (info as { file?: TFile | null } | null)?.file ?? this.app.workspace.getActiveFile();
+    if (!(file instanceof TFile)) return;
+
+    const settingFolder = this.highlightManager.getSettingFolderForFile(file.path);
+    if (!settingFolder) return;
+
+    if (this.hasH3InSettingFolder(settingFolder, selectedText)) return;
+
+    menu.addSeparator();
+    menu.addItem((item: any) => {
+      item.setTitle("添加设定");
+      item.setIcon("book-plus");
+
+      // 点击也可展开，避免不同平台下 hover 行为差异
+      item.onClick((evt: MouseEvent) => {
+        void this.openSettingFirstLevelMenu(evt.clientX, evt.clientY, settingFolder, selectedText, null);
+      });
+
+      const itemDom = item?.dom as HTMLElement | undefined;
+      if (itemDom) {
+        const arrowEl = itemDom.createSpan({ cls: "cw-context-submenu-arrow" });
+        setIcon(arrowEl, "chevron-right");
+        itemDom.addEventListener("mouseenter", () => {
+          const rect = itemDom.getBoundingClientRect();
+          void this.openSettingFirstLevelMenu(rect.right - 2, rect.top, settingFolder, selectedText, rect);
+        });
+        itemDom.addEventListener("mouseleave", () => this.scheduleCloseSettingSubmenus());
+      }
+    });
+  }
+
+  private async collectSettingFileOptions(settingFolder: string): Promise<Array<{
+    file: TFile;
+    h1Options: Array<{ label: string; lineNumber: number }>;
+  }>> {
+    const files = this.parser.getMarkdownFilesInFolder(settingFolder);
+    const fileOrder = this.orderManager.getFileOrder();
+    const orderedFiles = [...files].sort((a, b) => {
+      const indexA = fileOrder.indexOf(a.path);
+      const indexB = fileOrder.indexOf(b.path);
+      if (indexA === -1 && indexB === -1) return a.path.localeCompare(b.path);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+    const results: Array<{ file: TFile; h1Options: Array<{ label: string; lineNumber: number }> }> = [];
+
+    for (const file of orderedFiles) {
+      const parsed = await this.parser.parseFile(file);
+      if (!parsed) continue;
+      const h1Options: Array<{ label: string; lineNumber: number }> = [];
+      for (const h1 of parsed.h1List) {
+        h1Options.push({ label: h1.text, lineNumber: h1.lineNumber });
+      }
+      results.push({ file, h1Options });
+    }
+
+    return results;
+  }
+
+  private async openSettingFirstLevelMenu(
+    x: number,
+    y: number,
+    settingFolder: string,
+    selectedText: string,
+    anchorRect: DOMRect | null
+  ): Promise<void> {
+    this.clearCloseSettingSubmenusTimer();
+    const fileOptions = await this.collectSettingFileOptions(settingFolder);
+    if (fileOptions.length === 0) {
+      this.closeSettingSubmenus();
+      new Notice("该设定库没有可用的 H1 选项");
+      return;
+    }
+    if (!this.settingMenuRootEl) {
+      this.settingMenuRootEl = this.createSettingSubmenuContainer("cw-setting-submenu-root");
+    }
+    this.settingMenuRootEl.empty();
+    this.settingMenuRootEl.removeClass("is-expand-left");
+    this.settingMenuRootEl.removeClass("is-expand-right");
+    const firstLevelArrows: Array<{ el: HTMLElement; hasChildren: boolean }> = [];
+
+    for (const option of fileOptions) {
+      const itemEl = this.settingMenuRootEl.createDiv({ cls: "cw-setting-submenu-item" });
+      const iconEl = itemEl.createSpan({ cls: "cw-setting-submenu-item-icon" });
+      setIcon(iconEl, "file-text");
+      itemEl.createSpan({ text: option.file.basename, cls: "cw-setting-submenu-label" });
+
+      const hasChildren = option.h1Options.length > 0;
+      const arrowEl = itemEl.createSpan({ cls: "cw-setting-submenu-item-arrow" });
+      setIcon(arrowEl, "chevron-right");
+      firstLevelArrows.push({ el: arrowEl, hasChildren });
+      if (!hasChildren) {
+        itemEl.addClass("is-disabled");
+      }
+
+      itemEl.addEventListener("mouseenter", () => {
+        this.clearCloseSettingSubmenusTimer();
+        if (hasChildren) {
+          const rect = itemEl.getBoundingClientRect();
+          this.openSettingSecondLevelMenu(rect, option, selectedText);
+        } else {
+          this.closeSettingChildMenu();
+        }
+      });
+      itemEl.addEventListener("mouseleave", () => this.scheduleCloseSettingSubmenus());
+    }
+
+    const preferredAnchor = anchorRect ?? this.createPointAnchorRect(x, y);
+    this.settingMenuExpandDirection = this.pickMenuExpandDirection(this.settingMenuRootEl, preferredAnchor);
+    const isExpandLeft = this.settingMenuExpandDirection === "left";
+    this.settingMenuRootEl.toggleClass("is-expand-left", isExpandLeft);
+    this.settingMenuRootEl.toggleClass("is-expand-right", !isExpandLeft);
+    for (const arrow of firstLevelArrows) {
+      if (!arrow.hasChildren) continue;
+      arrow.el.empty();
+      setIcon(arrow.el, isExpandLeft ? "chevron-left" : "chevron-right");
+    }
+    if (anchorRect) {
+      this.placeMenuBesideAnchor(this.settingMenuRootEl, anchorRect, 2, this.settingMenuExpandDirection);
+    } else {
+      this.placeMenuBesideAnchor(this.settingMenuRootEl, preferredAnchor, 2, this.settingMenuExpandDirection);
+    }
+    this.settingMenuRootEl.style.display = "block";
+  }
+
+  private openSettingSecondLevelMenu(
+    anchorRect: DOMRect,
+    option: { file: TFile; h1Options: Array<{ label: string; lineNumber: number }> },
+    selectedText: string
+  ): void {
+    this.clearCloseSettingSubmenusTimer();
+    if (!this.settingMenuChildEl) {
+      this.settingMenuChildEl = this.createSettingSubmenuContainer("cw-setting-submenu-child");
+    }
+    this.settingMenuChildEl.empty();
+
+    for (const h1 of option.h1Options) {
+      const itemEl = this.settingMenuChildEl.createDiv({ cls: "cw-setting-submenu-item" });
+      const iconEl = itemEl.createSpan({ cls: "cw-setting-submenu-item-icon" });
+      setIcon(iconEl, "heading-1");
+      itemEl.createSpan({ text: h1.label, cls: "cw-setting-submenu-label" });
+      itemEl.addEventListener("mouseenter", () => this.clearCloseSettingSubmenusTimer());
+      itemEl.addEventListener("mouseleave", () => this.scheduleCloseSettingSubmenus());
+      itemEl.addEventListener("click", () => {
+        void this.appendSelectionAsH2(option.file, h1.lineNumber, selectedText);
+      });
+    }
+
+    this.placeMenuBesideAnchor(this.settingMenuChildEl, anchorRect, 2, this.settingMenuExpandDirection);
+    this.settingMenuChildEl.style.display = "block";
+  }
+
+  private async appendSelectionAsH2(file: TFile, h1LineNumber: number, selectedText: string): Promise<void> {
+    const h2Text = selectedText.replace(/\s+/g, " ").trim();
+    if (!h2Text) return;
+
+    const content = await this.app.vault.read(file);
+    const lines = content.split("\n");
+    const safeH1Line = Math.max(0, Math.min(h1LineNumber, lines.length - 1));
+
+    let insertIndex = lines.length;
+    for (let i = safeH1Line + 1; i < lines.length; i++) {
+      const trimmed = lines[i]?.trim() ?? "";
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        insertIndex = i;
+        break;
+      }
+    }
+
+    lines.splice(insertIndex, 0, `## ${h2Text}`);
+
+    await this.app.vault.modify(file, lines.join("\n"));
+    this.updateH3CacheForSettingFile(file.path);
+    this.highlightManager.clearCache();
+    await this.smartUpdateView();
+    new Notice(`已添加到：${file.basename}`);
+    this.closeSettingSubmenus();
+  }
+
+  private placeMenuWithinViewport(menuEl: HTMLElement, preferredX: number, preferredY: number): void {
+    menuEl.style.visibility = "hidden";
+    menuEl.style.display = "block";
+    menuEl.style.left = "0px";
+    menuEl.style.top = "0px";
+    const rect = menuEl.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.min(
+      Math.max(margin, preferredX),
+      Math.max(margin, window.innerWidth - rect.width - margin)
+    );
+    const top = Math.min(
+      Math.max(margin, preferredY),
+      Math.max(margin, window.innerHeight - rect.height - margin)
+    );
+    menuEl.style.left = `${left}px`;
+    menuEl.style.top = `${top}px`;
+    menuEl.style.visibility = "visible";
+  }
+
+  private placeMenuBesideAnchor(
+    menuEl: HTMLElement,
+    anchorRect: DOMRect,
+    gap: number,
+    direction: "right" | "left"
+  ): void {
+    menuEl.style.visibility = "hidden";
+    menuEl.style.display = "block";
+    menuEl.style.left = "0px";
+    menuEl.style.top = "0px";
+    const rect = menuEl.getBoundingClientRect();
+    const margin = 8;
+
+    let left = direction === "right"
+      ? anchorRect.right + gap
+      : anchorRect.left - rect.width - gap;
+    if (left + rect.width > window.innerWidth - margin || left < margin) {
+      left = direction === "right"
+        ? anchorRect.left - rect.width - gap
+        : anchorRect.right + gap;
+    }
+    if (left + rect.width > window.innerWidth - margin || left < margin) {
+      left = anchorRect.left - rect.width - gap;
+    }
+    left = Math.min(Math.max(margin, left), Math.max(margin, window.innerWidth - rect.width - margin));
+
+    let top = anchorRect.top;
+    if (top + rect.height > window.innerHeight - margin) {
+      top = window.innerHeight - rect.height - margin;
+    }
+    top = Math.max(margin, top);
+
+    menuEl.style.left = `${left}px`;
+    menuEl.style.top = `${top}px`;
+    menuEl.style.visibility = "visible";
+  }
+
+  private pickMenuExpandDirection(menuEl: HTMLElement, anchorRect: DOMRect): "right" | "left" {
+    const margin = 8;
+    const widthA = this.measureMenuWidth(menuEl);
+    const widthB = this.measureMenuClassWidth("cw-setting-submenu cw-setting-submenu-child");
+    const totalWidth = widthA + 2 + widthB;
+    const rightSpace = window.innerWidth - anchorRect.right - margin;
+    const leftSpace = anchorRect.left - margin;
+
+    const canRight = rightSpace >= totalWidth;
+    const canLeft = leftSpace >= totalWidth;
+    if (canRight && canLeft) return "right";
+    if (canRight) return "right";
+    if (canLeft) return "left";
+    return rightSpace >= leftSpace ? "right" : "left";
+  }
+
+  private measureMenuWidth(menuEl: HTMLElement): number {
+    menuEl.style.visibility = "hidden";
+    menuEl.style.display = "block";
+    menuEl.style.left = "0px";
+    menuEl.style.top = "0px";
+    const width = menuEl.getBoundingClientRect().width;
+    menuEl.style.display = "none";
+    menuEl.style.visibility = "visible";
+    return width;
+  }
+
+  private measureMenuClassWidth(className: string): number {
+    const tempEl = document.body.createDiv({ cls: className });
+    tempEl.style.visibility = "hidden";
+    tempEl.style.display = "block";
+    tempEl.style.left = "0px";
+    tempEl.style.top = "0px";
+    const width = tempEl.getBoundingClientRect().width;
+    tempEl.remove();
+    return width;
+  }
+
+  private createPointAnchorRect(x: number, y: number): DOMRect {
+    return new DOMRect(x, y, 0, 0);
+  }
+
+  private createSettingSubmenuContainer(cls: string): HTMLElement {
+    const menuEl = document.body.createDiv({ cls: `cw-setting-submenu ${cls}` });
+    menuEl.addEventListener("mouseenter", () => this.clearCloseSettingSubmenusTimer());
+    menuEl.addEventListener("mouseleave", () => this.scheduleCloseSettingSubmenus());
+    return menuEl;
+  }
+
+  private closeSettingChildMenu(): void {
+    if (this.settingMenuChildEl) {
+      this.settingMenuChildEl.style.display = "none";
+      this.settingMenuChildEl.empty();
+    }
+  }
+
+  private closeSettingSubmenus(): void {
+    this.clearCloseSettingSubmenusTimer();
+    if (this.settingMenuRootEl) {
+      this.settingMenuRootEl.remove();
+      this.settingMenuRootEl = null;
+    }
+    if (this.settingMenuChildEl) {
+      this.settingMenuChildEl.remove();
+      this.settingMenuChildEl = null;
+    }
+  }
+
+  private scheduleCloseSettingSubmenus(): void {
+    this.clearCloseSettingSubmenusTimer();
+    this.settingMenuCloseTimer = window.setTimeout(() => this.closeSettingSubmenus(), 180);
+  }
+
+  private clearCloseSettingSubmenusTimer(): void {
+    if (this.settingMenuCloseTimer !== null) {
+      window.clearTimeout(this.settingMenuCloseTimer);
+      this.settingMenuCloseTimer = null;
+    }
+  }
+
+  private async rebuildAllH3TitleCache(): Promise<void> {
+    this.h3TitleCacheByFolder.clear();
+    for (const mapping of this.settings.folderMappings) {
+      if (!mapping.settingFolder) continue;
+      await this.rebuildH3TitleCacheForFolder(mapping.settingFolder);
+    }
+  }
+
+  private async rebuildH3TitleCacheForFolder(settingFolder: string): Promise<void> {
+    const titleSet = new Set<string>();
+    const files = this.parser.getMarkdownFilesInFolder(settingFolder);
+    for (const file of files) {
+      const content = await this.app.vault.read(file);
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("### ") && !trimmed.startsWith("#### ")) {
+          const title = trimmed.slice(4).trim();
+          if (title) titleSet.add(title);
+        }
+      }
+    }
+    this.h3TitleCacheByFolder.set(settingFolder, titleSet);
+  }
+
+  private hasH3InSettingFolder(settingFolder: string, selectedText: string): boolean {
+    const cachedTitles = this.h3TitleCacheByFolder.get(settingFolder);
+    if (!cachedTitles) return false;
+    return cachedTitles.has(selectedText.trim());
+  }
+
+  private updateH3CacheForSettingFile(filePath: string): void {
+    const settingFolder = this.findSettingFolderByFilePath(filePath);
+    if (!settingFolder) return;
+    void this.rebuildH3TitleCacheForFolder(settingFolder);
+  }
+
+  private findSettingFolderByFilePath(filePath: string): string | null {
+    for (const mapping of this.settings.folderMappings) {
+      if (mapping.settingFolder && filePath.startsWith(`${mapping.settingFolder}/`)) {
+        return mapping.settingFolder;
       }
     }
     return null;

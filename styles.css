@@ -152,6 +152,110 @@
   color: var(--text-muted);
 }
 
+.cw-context-submenu-arrow {
+  display: inline-flex;
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.cw-setting-submenu {
+  position: fixed;
+  z-index: 10020;
+  width: 150px;
+  max-width: 150px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.cw-setting-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 6px 10px;
+  cursor: pointer;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.cw-setting-submenu-item-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.cw-setting-submenu-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.cw-setting-submenu-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-setting-submenu-item-arrow {
+  display: inline-flex;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.cw-setting-submenu-root .cw-setting-submenu-item-icon {
+  order: 1;
+  margin-left: 0;
+  margin-right: -4px;
+}
+
+/* 子菜单A向右展开：file-text 在文字左边，箭头在最右 */
+.cw-setting-submenu-root.is-expand-right .cw-setting-submenu-item-arrow {
+  order: 3;
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.cw-setting-submenu-root.is-expand-right .cw-setting-submenu-label {
+  order: 2;
+  text-align: left;
+}
+
+/* 子菜单A向左展开：file-text 在文字左边，箭头在最左 */
+.cw-setting-submenu-root.is-expand-left .cw-setting-submenu-item-arrow {
+  order: 0;
+  margin-left: 0;
+  margin-right: 16px;
+}
+
+.cw-setting-submenu-root.is-expand-left .cw-setting-submenu-label {
+  order: 2;
+  text-align: left;
+}
+
+.cw-setting-submenu-root.is-expand-left .cw-setting-submenu-item {
+  padding-left: 6px;
+  padding-right: 8px;
+}
+
+.cw-setting-submenu-item.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.cw-setting-submenu-item.is-disabled:hover {
+  background: transparent;
+}
+
 /* 主容器 */
 .chinese-writer-view {
   display: flex;

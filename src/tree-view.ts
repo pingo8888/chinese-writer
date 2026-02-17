@@ -1190,7 +1190,17 @@ export class TreeView extends ItemView {
       });
     }
 
-    // 2. 重命名设定
+    // 2. 编辑设定
+    menu.addItem((item) => {
+      item
+        .setTitle("编辑设定")
+        .setIcon("heading-2")
+        .onClick(async () => {
+          await this.editH2(node);
+        });
+    });
+
+    // 3. 重命名设定
     menu.addItem((item) => {
       item
         .setTitle("重命名设定")
@@ -1200,10 +1210,10 @@ export class TreeView extends ItemView {
         });
     });
 
-    // 3. 分割线
+    // 4. 分割线
     menu.addSeparator();
 
-    // 4. 删除设定
+    // 5. 删除设定
     menu.addItem((item) => {
       item
         .setTitle("删除设定")
@@ -1729,5 +1739,59 @@ export class TreeView extends ItemView {
     );
 
     modal.open();
+  }
+
+  private async editH2(node: TreeNode): Promise<void> {
+    const h1Node = this.findParentH1Node(node);
+    const fileNode = this.findParentFileNode(node);
+    if (!h1Node || !fileNode || !fileNode.filePath) return;
+
+    const abstractFile = this.app.vault.getAbstractFileByPath(fileNode.filePath);
+    if (!(abstractFile instanceof TFile)) return;
+
+    const content = await this.app.vault.read(abstractFile);
+    const lines = content.split("\n");
+    const targetLine = this.findFirstContentLine(lines, h1Node.text, node.text);
+
+    const targetLeaf = await this.plugin.openFileWithSettings(abstractFile, { revealWhenNewTab: true });
+    if (!targetLeaf) return;
+    const targetView = targetLeaf.view instanceof MarkdownView ? targetLeaf.view : null;
+    if (!targetView?.editor) return;
+
+    targetView.editor.setCursor({ line: targetLine, ch: 0 });
+  }
+
+  private findFirstContentLine(lines: string[], h1Title: string, h2Title: string): number {
+    let inTargetH1 = false;
+    let inTargetH2 = false;
+    let h2Line = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i]?.trim() ?? "";
+
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        inTargetH1 = trimmed.slice(2).trim() === h1Title;
+        inTargetH2 = false;
+        continue;
+      }
+
+      if (inTargetH1 && trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
+        const currentH2 = trimmed.slice(3).trim();
+        inTargetH2 = currentH2 === h2Title;
+        if (inTargetH2) {
+          h2Line = i;
+        }
+        continue;
+      }
+
+      if (inTargetH2) {
+        if (trimmed.startsWith("#")) break;
+        if (trimmed.length > 0) {
+          return i;
+        }
+      }
+    }
+
+    return h2Line;
   }
 }

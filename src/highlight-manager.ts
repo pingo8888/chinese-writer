@@ -13,6 +13,12 @@ interface KeywordPreviewData {
   bodyLines: string[];
 }
 
+interface H3SectionData {
+  title: string;
+  aliases: string[];
+  bodyLines: string[];
+}
+
 /**
  * 高亮管理器
  * 负责在编辑器中高亮显示设定库中的关键字
@@ -22,9 +28,11 @@ export class HighlightManager {
   app: App;
   private keywordsCache: Map<string, Set<string>> = new Map();
   private keywordPreviewCache: Map<string, Map<string, KeywordPreviewData>> = new Map();
+  private keywordGroupCache: Map<string, Map<string, string>> = new Map();
   private keywordsVersion = 0;
   private previewEl: HTMLElement | null = null;
   private previewHoverKey = "";
+  private previewAnchorEl: HTMLElement | null = null;
   private currentPreviewData: KeywordPreviewData | null = null;
   private previewHideTimer: number | null = null;
   private readonly previewHideDelayMs = 450;
@@ -61,12 +69,17 @@ export class HighlightManager {
    */
   async extractKeywordsFromSettingFolder(settingFolder: string): Promise<Set<string>> {
     // 检查缓存
-    if (this.keywordsCache.has(settingFolder) && this.keywordPreviewCache.has(settingFolder)) {
+    if (
+      this.keywordsCache.has(settingFolder) &&
+      this.keywordPreviewCache.has(settingFolder) &&
+      this.keywordGroupCache.has(settingFolder)
+    ) {
       return this.keywordsCache.get(settingFolder)!;
     }
 
     const keywords = new Set<string>();
     const previewMap = new Map<string, KeywordPreviewData>();
+    const groupMap = new Map<string, string>();
 
     if (!settingFolder) {
       return keywords;
@@ -86,19 +99,40 @@ export class HighlightManager {
             // H2的文本就是关键字
             const keyword = h2.text.trim();
             if (keyword) {
-              keywords.add(keyword);
+              const h2Aliases = this.extractAliases(h2.content);
+              const h2GroupId = `h2::${parseResult.filePath}::${h1.text}::${h2.text}`;
+              const h2PreviewData: KeywordPreviewData = {
+                keyword,
+                filePath: parseResult.filePath,
+                fileName: parseResult.fileName,
+                h1Title: h1.text,
+                h2Title: h2.text,
+                aliases: h2Aliases,
+                bodyLines: this.extractBodyLines(h2.content),
+              };
 
-              // 相同关键字只保留首个来源，保持展示稳定
-              if (!previewMap.has(keyword)) {
-                previewMap.set(keyword, {
-                  keyword,
+              this.addKeywordVariant(keywords, previewMap, groupMap, keyword, h2PreviewData, h2GroupId);
+              for (const alias of h2Aliases) {
+                this.addKeywordVariant(keywords, previewMap, groupMap, alias, h2PreviewData, h2GroupId);
+              }
+
+              const h3Sections = this.extractH3Sections(h2.content);
+              for (const h3 of h3Sections) {
+                if (!h3.title) continue;
+                const h3GroupId = `h3::${parseResult.filePath}::${h1.text}::${h2.text}::${h3.title}`;
+                const h3PreviewData: KeywordPreviewData = {
+                  keyword: h3.title,
                   filePath: parseResult.filePath,
                   fileName: parseResult.fileName,
                   h1Title: h1.text,
                   h2Title: h2.text,
-                  aliases: this.extractAliases(h2.content),
-                  bodyLines: this.extractBodyLines(h2.content),
-                });
+                  aliases: h3.aliases,
+                  bodyLines: h3.bodyLines,
+                };
+                this.addKeywordVariant(keywords, previewMap, groupMap, h3.title, h3PreviewData, h3GroupId);
+                for (const alias of h3.aliases) {
+                  this.addKeywordVariant(keywords, previewMap, groupMap, alias, h3PreviewData, h3GroupId);
+                }
               }
             }
           }
@@ -109,6 +143,7 @@ export class HighlightManager {
     // 缓存结果
     this.keywordsCache.set(settingFolder, keywords);
     this.keywordPreviewCache.set(settingFolder, previewMap);
+    this.keywordGroupCache.set(settingFolder, groupMap);
 
     return keywords;
   }
@@ -119,6 +154,7 @@ export class HighlightManager {
   clearCache(): void {
     this.keywordsCache.clear();
     this.keywordPreviewCache.clear();
+    this.keywordGroupCache.clear();
     this.keywordsVersion++;
   }
 
@@ -209,6 +245,57 @@ export class HighlightManager {
     return folderMap.get(keyword) ?? null;
   }
 
+  private getKeywordGroupMap(settingFolder: string): Map<string, string> {
+    return this.keywordGroupCache.get(settingFolder) ?? new Map();
+  }
+
+  private addKeywordVariant(
+    keywords: Set<string>,
+    previewMap: Map<string, KeywordPreviewData>,
+    groupMap: Map<string, string>,
+    variant: string,
+    previewData: KeywordPreviewData,
+    groupId: string
+  ): void {
+    const normalized = variant.trim();
+    if (!normalized) return;
+    if (previewMap.has(normalized)) return;
+    keywords.add(normalized);
+    previewMap.set(normalized, previewData);
+    groupMap.set(normalized, groupId);
+  }
+
+  private extractH3Sections(lines: string[]): H3SectionData[] {
+    const sections: H3SectionData[] = [];
+    let currentTitle = "";
+    let currentLines: string[] = [];
+
+    const flush = () => {
+      if (!currentTitle) return;
+      sections.push({
+        title: currentTitle,
+        aliases: this.extractAliases(currentLines),
+        bodyLines: this.extractBodyLines(currentLines),
+      });
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("### ") && !trimmed.startsWith("#### ")) {
+        flush();
+        currentTitle = trimmed.slice(4).trim();
+        currentLines = [];
+        continue;
+      }
+      if (currentTitle) {
+        currentLines.push(line);
+      }
+    }
+
+    flush();
+    return sections;
+  }
+
   private initializeHoverPreview(): void {
     this.previewEl = document.createElement("div");
     this.previewEl.className = "chinese-writer-highlight-preview";
@@ -282,17 +369,19 @@ export class HighlightManager {
 
     this.clearScheduledHidePreview();
     const hoverKey = `${settingFolder}::${keyword}`;
-    this.showPreview(previewData, hoverKey, event.clientX, event.clientY);
+    this.showPreview(previewData, hoverKey, highlightEl, event.clientX, event.clientY);
   }
 
   private showPreview(
     previewData: KeywordPreviewData,
     hoverKey: string,
+    anchorEl: HTMLElement,
     mouseX: number,
     mouseY: number
   ): void {
     if (!this.previewEl) return;
     const isNewHover = this.previewHoverKey !== hoverKey;
+    const isNewAnchor = this.previewAnchorEl !== anchorEl;
 
     if (isNewHover) {
       this.previewEl.empty();
@@ -353,6 +442,7 @@ export class HighlightManager {
       }
 
       this.previewHoverKey = hoverKey;
+      this.previewAnchorEl = anchorEl;
       this.currentPreviewData = previewData;
     }
 
@@ -364,7 +454,8 @@ export class HighlightManager {
     this.applyBodyMaxHeight(previewStyle.height, previewStyle.maxBodyLines);
 
     // 预览栏只在首次出现时定位，避免跟随鼠标不断抖动
-    if (isNewHover) {
+    if (isNewHover || isNewAnchor) {
+      this.previewAnchorEl = anchorEl;
       const offset = 14;
       let left = mouseX + offset;
       let top = mouseY + offset;
@@ -387,6 +478,7 @@ export class HighlightManager {
     if (!this.previewEl) return;
     this.previewEl.style.display = "none";
     this.previewHoverKey = "";
+    this.previewAnchorEl = null;
     this.currentPreviewData = null;
   }
 
@@ -550,6 +642,7 @@ export class HighlightManager {
 
           // 收集所有匹配位置
           const matches: { from: number; to: number; keyword: string }[] = [];
+          const keywordGroupMap = manager.getKeywordGroupMap(settingFolder);
 
           // 获取高亮模式
           const highlightMode = manager.plugin.settings.highlightStyle.mode;
@@ -561,27 +654,34 @@ export class HighlightManager {
             const regex = new RegExp(escapedKeyword, 'g');
 
             let match;
-            let foundFirst = false;
             while ((match = regex.exec(text)) !== null) {
-              // 如果是首次高亮模式,只添加第一个匹配
-              if (highlightMode === "first" && foundFirst) {
-                continue;
-              }
-
               matches.push({
                 from: match.index,
                 to: match.index + keyword.length,
                 keyword,
               });
-
-              foundFirst = true;
             }
           }
 
-          // 按位置排序并添加装饰器
-          matches.sort((a, b) => a.from - b.from);
+          const finalMatches =
+            highlightMode === "first"
+              ? (() => {
+                const firstByGroup = new Map<string, { from: number; to: number; keyword: string }>();
+                const sortedMatches = [...matches].sort((a, b) => a.from - b.from);
+                for (const match of sortedMatches) {
+                  const groupId = keywordGroupMap.get(match.keyword) ?? `kw::${match.keyword}`;
+                  if (!firstByGroup.has(groupId)) {
+                    firstByGroup.set(groupId, match);
+                  }
+                }
+                return Array.from(firstByGroup.values());
+              })()
+              : matches;
 
-          for (const match of matches) {
+          // 按位置排序并添加装饰器
+          finalMatches.sort((a, b) => a.from - b.from);
+
+          for (const match of finalMatches) {
             builder.add(
               match.from,
               match.to,
