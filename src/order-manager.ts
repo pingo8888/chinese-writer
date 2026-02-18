@@ -447,6 +447,171 @@ export class OrderManager {
   }
 
   /**
+   * 将 H1 移动到目标文件末尾（跨文件）
+   */
+  async moveH1ToEndOfFile(
+    sourceFilePath: string,
+    targetFilePath: string,
+    h1Text: string
+  ): Promise<void> {
+    // 源目标相同文件，不做操作
+    if (sourceFilePath === targetFilePath) return;
+
+    const sourceFile = this.app.vault.getAbstractFileByPath(sourceFilePath);
+    if (!(sourceFile instanceof TFile)) return;
+
+    const sourceContent = await this.app.vault.read(sourceFile);
+    const sourceLines = sourceContent.split("\n");
+
+    // 提取要移动的 H1 块
+    const h1Block: string[] = [];
+    let inTargetH1 = false;
+
+    for (const line of sourceLines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        const currentH1 = trimmed.substring(2).trim();
+        if (currentH1 === h1Text) {
+          inTargetH1 = true;
+          h1Block.push(line);
+          continue;
+        }
+        if (inTargetH1) {
+          break;
+        }
+      }
+
+      if (inTargetH1) {
+        h1Block.push(line);
+      }
+    }
+
+    if (h1Block.length === 0) return;
+
+    // 从源文件中删除该 H1 块
+    const newSourceLines: string[] = [];
+    inTargetH1 = false;
+
+    for (const line of sourceLines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        const currentH1 = trimmed.substring(2).trim();
+        if (currentH1 === h1Text) {
+          inTargetH1 = true;
+          continue;
+        }
+        if (inTargetH1) {
+          inTargetH1 = false;
+        }
+      }
+
+      if (!inTargetH1) {
+        newSourceLines.push(line);
+      }
+    }
+
+    await this.app.vault.modify(sourceFile, newSourceLines.join("\n"));
+
+    // 追加到目标文件末尾
+    const targetFile = this.app.vault.getAbstractFileByPath(targetFilePath);
+    if (!(targetFile instanceof TFile)) return;
+
+    const targetContent = await this.app.vault.read(targetFile);
+    const targetLines = targetContent.split("\n");
+    const newTargetLines = [...targetLines, ...h1Block];
+
+    await this.app.vault.modify(targetFile, newTargetLines.join("\n"));
+  }
+
+  /**
+   * 将 H2 移动到指定 H1 的末尾（跨 H1 或跨文件）
+   */
+  async moveH2ToEndOfH1(
+    sourceFilePath: string,
+    sourceH1Text: string,
+    targetFilePath: string,
+    targetH1Text: string,
+    h2Text: string
+  ): Promise<void> {
+    const sourceFile = this.app.vault.getAbstractFileByPath(sourceFilePath);
+    if (!(sourceFile instanceof TFile)) return;
+
+    const sourceContent = await this.app.vault.read(sourceFile);
+    const sourceLines = sourceContent.split("\n");
+
+    // 提取要移动的 H2 块
+    const h2Block: string[] = [];
+    let inTargetH1 = false;
+    let inTargetH2 = false;
+
+    for (const line of sourceLines) {
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        const currentH1 = trimmed.substring(2).trim();
+        inTargetH1 = (currentH1 === sourceH1Text);
+        if (!inTargetH1 && inTargetH2) break;
+        if (!inTargetH1) inTargetH2 = false;
+      } else if (inTargetH1 && trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
+        const currentH2 = trimmed.substring(3).trim();
+        if (currentH2 === h2Text) {
+          inTargetH2 = true;
+          h2Block.push(line);
+        } else if (inTargetH2) {
+          break;
+        }
+      } else if (inTargetH2) {
+        h2Block.push(line);
+      }
+    }
+
+    if (h2Block.length === 0) return;
+
+    // 若源和目标相同 H1，不做任何操作
+    if (sourceFilePath === targetFilePath && sourceH1Text === targetH1Text) return;
+
+    // 从源文件删除 H2
+    await this.removeH2FromFile(sourceFilePath, sourceH1Text, h2Text);
+
+    // 插入到目标 H1 末尾
+    const targetFile = this.app.vault.getAbstractFileByPath(targetFilePath);
+    if (!(targetFile instanceof TFile)) return;
+
+    const targetContent = await this.app.vault.read(targetFile);
+    const targetLines = targetContent.split("\n");
+
+    // 找到目标 H1 的末尾位置（下一个 H1 之前，或文件末尾）
+    let insertIndex = targetLines.length;
+    let inTarget = false;
+
+    for (let i = 0; i < targetLines.length; i++) {
+      const line = targetLines[i];
+      if (!line) continue;
+      const trimmed = line.trim();
+
+      if (trimmed.startsWith("# ") && !trimmed.startsWith("## ")) {
+        const currentH1 = trimmed.substring(2).trim();
+        if (currentH1 === targetH1Text) {
+          inTarget = true;
+        } else if (inTarget) {
+          insertIndex = i;
+          break;
+        }
+      }
+    }
+
+    const newLines = [
+      ...targetLines.slice(0, insertIndex),
+      ...h2Block,
+      ...targetLines.slice(insertIndex),
+    ];
+
+    await this.app.vault.modify(targetFile, newLines.join("\n"));
+  }
+
+  /**
    * 跨 H1 或跨文件移动 H2
    */
   async moveH2BetweenH1s(

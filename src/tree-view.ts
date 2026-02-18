@@ -698,6 +698,24 @@ export class TreeView extends ItemView {
 
     if (!this.draggedNode) return;
 
+    // H1 拖到文件上：移动到该文件末尾
+    if (this.draggedNode.type === "h1" && targetNode.type === "file") {
+      e.dataTransfer!.dropEffect = "move";
+      const target = e.currentTarget as HTMLElement;
+      // 显示定位线在文件节点下方，表示放入末尾
+      this.showDropIndicator(target, false);
+      return;
+    }
+
+    // H2 拖到 H1 上：移动到该 H1 末尾
+    if (this.draggedNode.type === "h2" && targetNode.type === "h1") {
+      e.dataTransfer!.dropEffect = "move";
+      const target = e.currentTarget as HTMLElement;
+      // 显示定位线在 H1 节点下方，表示放入末尾
+      this.showDropIndicator(target, false);
+      return;
+    }
+
     // 只检查类型是否相同，允许跨父节点移动
     if (targetNode.type !== this.draggedNode.type) {
       // 不同级，不显示定位线
@@ -804,6 +822,18 @@ export class TreeView extends ItemView {
       return;
     }
 
+    // H1 拖到文件上：移动到该文件末尾
+    if (this.draggedNode.type === "h1" && targetNode.type === "file") {
+      await this.moveH1ToFileEnd(this.draggedNode, targetNode);
+      return;
+    }
+
+    // H2 拖到 H1 上：移动到该 H1 末尾
+    if (this.draggedNode.type === "h2" && targetNode.type === "h1") {
+      await this.moveH2ToH1End(this.draggedNode, targetNode);
+      return;
+    }
+
     // 检查是否同级
     if (this.draggedNode.type !== targetNode.type) {
       return;
@@ -824,6 +854,53 @@ export class TreeView extends ItemView {
     this.removeDropIndicator();
 
     this.draggedNode = null;
+  }
+
+  /**
+   * 将 H2 移动到目标 H1 末尾
+   */
+  private async moveH2ToH1End(draggedNode: TreeNode, targetH1Node: TreeNode): Promise<void> {
+    const draggedH1Node = this.findParentH1Node(draggedNode);
+    const draggedFileNode = this.findParentFileNode(draggedNode);
+    const targetFileNode = this.findParentFileNode(targetH1Node);
+
+    if (!draggedH1Node || !draggedFileNode || !targetFileNode) return;
+
+    // 若目标 H1 和来源 H1 相同，不做操作
+    if (draggedH1Node.id === targetH1Node.id) return;
+
+    if (!draggedFileNode.filePath || !targetFileNode.filePath) return;
+
+    await this.plugin.orderManager.moveH2ToEndOfH1(
+      draggedFileNode.filePath,
+      draggedH1Node.text,
+      targetFileNode.filePath,
+      targetH1Node.text,
+      draggedNode.text
+    );
+
+    await this.smartUpdate();
+  }
+
+  /**
+   * 将 H1 移动到目标文件末尾
+   */
+  private async moveH1ToFileEnd(draggedNode: TreeNode, targetFileNode: TreeNode): Promise<void> {
+    const draggedFileNode = this.findParentFileNode(draggedNode);
+    if (!draggedFileNode) return;
+
+    // 若目标文件和来源文件相同，不做操作
+    if (draggedFileNode.id === targetFileNode.id) return;
+
+    if (!draggedFileNode.filePath || !targetFileNode.filePath) return;
+
+    await this.plugin.orderManager.moveH1ToEndOfFile(
+      draggedFileNode.filePath,
+      targetFileNode.filePath,
+      draggedNode.text
+    );
+
+    await this.smartUpdate();
   }
 
   /**
