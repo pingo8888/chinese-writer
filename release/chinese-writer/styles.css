@@ -438,6 +438,13 @@
   text-decoration: line-through;
 }
 
+/* 设置页主标题 */
+.cw-settings-main-title {
+  font-size: 18px !important;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
 /* H2 数量统计 */
 .tree-item-count {
   margin-left: auto;

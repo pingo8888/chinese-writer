@@ -88,6 +88,8 @@ export interface ChineseWriterSettings {
   highlightPreviewStyle: HighlightPreviewStyle;
   /** 常见标点检测配置 */
   punctuationCheck: PunctuationCheckSettings;
+  /** 是否启用右边栏第3层节点悬停预览 */
+  enableTreeH2HoverPreview: boolean;
   /** 通过插件功能打开/新建文件时是否在新标签页打开 */
   openInNewTab: boolean;
 }
@@ -123,6 +125,7 @@ export const DEFAULT_SETTINGS: ChineseWriterSettings = {
     doubleQuote: true,
     singleQuote: true,
   },
+  enableTreeH2HoverPreview: false,
   openInNewTab: true,
 };
 
@@ -153,7 +156,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
 
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "中文写作插件设置" });
+    containerEl.createEl("h2", { text: "中文写作插件设置", cls: "cw-settings-main-title" });
 
     // 文件夹对应关系设置
     containerEl.createEl("h3", { text: "文件夹对应关系" });
@@ -427,7 +430,19 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       });
 
     // 高亮预览栏设置
-    containerEl.createEl("h3", { text: "高亮悬停预览" });
+    containerEl.createEl("h3", { text: "预览栏设置" });
+
+    new Setting(containerEl)
+      .setName("右边栏悬停预览")
+      .setDesc("开启后，鼠标悬停右边栏时显示预览栏")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableTreeH2HoverPreview)
+          .onChange(async (value) => {
+            this.plugin.settings.enableTreeH2HoverPreview = value;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("预览栏宽度")

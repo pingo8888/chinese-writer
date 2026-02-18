@@ -387,6 +387,17 @@ export class HighlightManager {
       return;
     }
 
+    const treeAnchorEl = target.closest(".cw-tree-preview-anchor") as HTMLElement | null;
+    if (treeAnchorEl) {
+      if (!this.plugin.settings.enableTreeH2HoverPreview) {
+        this.scheduleHidePreview(80);
+        return;
+      }
+      this.clearScheduledHidePreview();
+      void this.showPreviewForTreeNodeAnchor(treeAnchorEl, event.clientX, event.clientY);
+      return;
+    }
+
     const highlightEl = target.closest(".chinese-writer-highlight") as HTMLElement | null;
     if (!highlightEl) {
       this.scheduleHidePreview();
@@ -409,6 +420,52 @@ export class HighlightManager {
     this.clearScheduledHidePreview();
     const hoverKey = `${settingFolder}::${keyword}`;
     this.showPreview(previewData, hoverKey, highlightEl, event.clientX, event.clientY);
+  }
+
+  async showPreviewForTreeNodeAnchor(anchorEl: HTMLElement, mouseX: number, mouseY: number): Promise<void> {
+    const settingFolder = anchorEl.dataset.cwTreeSettingFolder;
+    const filePath = anchorEl.dataset.cwTreeFilePath;
+    const h1Title = anchorEl.dataset.cwTreeH1;
+    const h2Title = anchorEl.dataset.cwTreeH2;
+    const keyword = anchorEl.dataset.cwTreeKeyword ?? h2Title;
+    if (!settingFolder || !filePath || !h1Title || !h2Title || !keyword) {
+      this.scheduleHidePreview(120);
+      return;
+    }
+
+    await this.extractKeywordsFromSettingFolder(settingFolder);
+    const previewData = this.findTreeNodePreviewData(settingFolder, filePath, h1Title, h2Title, keyword);
+    if (!previewData) {
+      this.scheduleHidePreview(120);
+      return;
+    }
+
+    this.clearScheduledHidePreview();
+    const hoverKey = `tree::${filePath}::${h1Title}::${h2Title}`;
+    this.showPreview(previewData, hoverKey, anchorEl, mouseX, mouseY);
+  }
+
+  private findTreeNodePreviewData(
+    settingFolder: string,
+    filePath: string,
+    h1Title: string,
+    h2Title: string,
+    keyword: string
+  ): KeywordPreviewData | null {
+    const folderMap = this.keywordPreviewCache.get(settingFolder);
+    if (!folderMap) return null;
+
+    for (const previewData of folderMap.values()) {
+      if (
+        previewData.filePath === filePath &&
+        previewData.h1Title === h1Title &&
+        previewData.h2Title === h2Title
+      ) {
+        return previewData;
+      }
+    }
+
+    return folderMap.get(keyword) ?? null;
   }
 
   private showPreview(

@@ -432,6 +432,18 @@ export class TreeView extends ItemView {
     if (node.type === "h2" && this.isDeadStatus(node.status)) {
       textEl.addClass("tree-item-h2-dead");
     }
+    if (node.type === "h2") {
+      const h1Node = this.findParentH1Node(node);
+      const fileNode = this.findParentFileNode(node);
+      if (this.currentSettingFolder && h1Node && fileNode?.filePath) {
+        nodeContent.addClass("cw-tree-preview-anchor");
+        nodeContent.setAttribute("data-cw-tree-setting-folder", this.currentSettingFolder);
+        nodeContent.setAttribute("data-cw-tree-file-path", fileNode.filePath);
+        nodeContent.setAttribute("data-cw-tree-h1", h1Node.text);
+        nodeContent.setAttribute("data-cw-tree-h2", node.text);
+        nodeContent.setAttribute("data-cw-tree-keyword", node.text);
+      }
+    }
 
     // H2 数量统计（仅在文件和 H1 节点显示）
     if (node.type === "file" || node.type === "h1") {
