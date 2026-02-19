@@ -6,6 +6,7 @@ import type { FileParseResult, H1Info, H2Info } from "./types";
  */
 export class FileParser {
   private vault: Vault;
+  private parseCache: Map<string, { mtime: number; size: number; result: FileParseResult }> = new Map();
 
   constructor(vault: Vault) {
     this.vault = vault;
@@ -47,6 +48,11 @@ export class FileParser {
   async parseFile(file: TFile): Promise<FileParseResult | null> {
     if (file.extension !== "md") {
       return null;
+    }
+
+    const cached = this.parseCache.get(file.path);
+    if (cached && cached.mtime === file.stat.mtime && cached.size === file.stat.size) {
+      return cached.result;
     }
 
     const content = await this.vault.read(file);
@@ -116,11 +122,17 @@ export class FileParser {
       h1List.push(currentH1);
     }
 
-    return {
+    const result: FileParseResult = {
       filePath: file.path,
       fileName: file.basename,
       h1List,
     };
+    this.parseCache.set(file.path, {
+      mtime: file.stat.mtime,
+      size: file.stat.size,
+      result,
+    });
+    return result;
   }
 
   /**

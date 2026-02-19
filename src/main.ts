@@ -755,17 +755,17 @@ export default class ChineseWriterPlugin extends Plugin {
 
   private async rebuildAllH3TitleCache(): Promise<void> {
     this.h3TitleCacheByFolder.clear();
-    for (const mapping of this.settings.folderMappings) {
-      if (!mapping.settingFolder) continue;
-      await this.rebuildH3TitleCacheForFolder(mapping.settingFolder);
-    }
+    const folders = this.settings.folderMappings
+      .map((mapping) => mapping.settingFolder)
+      .filter((folder): folder is string => !!folder);
+    await Promise.all(folders.map((folder) => this.rebuildH3TitleCacheForFolder(folder)));
   }
 
   private async rebuildH3TitleCacheForFolder(settingFolder: string): Promise<void> {
     const titleSet = new Set<string>();
     const files = this.parser.getMarkdownFilesInFolder(settingFolder);
-    for (const file of files) {
-      const content = await this.app.vault.read(file);
+    const contents = await Promise.all(files.map((file) => this.app.vault.read(file)));
+    for (const content of contents) {
       const lines = content.split("\n");
       for (const line of lines) {
         const trimmed = line.trim();

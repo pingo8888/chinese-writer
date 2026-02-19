@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf, setIcon, Menu, TFile, MarkdownView } from "obsidian";
+import { EditorView } from "@codemirror/view";
 import type ChineseWriterPlugin from "./main";
 import type { TreeNode, FileParseResult } from "./types";
 import { TextInputModal, ConfirmModal } from "./modals";
@@ -248,14 +249,9 @@ export class TreeView extends ItemView {
     const parser = this.plugin.parser;
     const files = parser.getMarkdownFilesInFolder(folderPath);
 
-    // 解析所有文件
-    const parseResults = [];
-    for (const file of files) {
-      const parseResult = await parser.parseFile(file);
-      if (parseResult) {
-        parseResults.push(parseResult);
-      }
-    }
+    // 并行解析所有文件
+    const parsedList = await Promise.all(files.map((file) => parser.parseFile(file)));
+    const parseResults = parsedList.filter((item): item is FileParseResult => item !== null);
 
     // 应用文件排序；若 order.json 为空，按当前树顺序初始化一次
     let fileOrder = this.plugin.orderManager.getFileOrder();
@@ -1882,6 +1878,27 @@ export class TreeView extends ItemView {
     if (!targetView?.editor) return;
 
     targetView.editor.setCursor({ line: targetLine, ch: 0 });
+    this.centerEditorLine(targetView.editor, targetLine);
+  }
+
+  private centerEditorLine(
+    editor: unknown,
+    line: number
+  ): void {
+    const cmView = (editor as { cm?: EditorView }).cm;
+    if (!cmView) return;
+
+    const clampedLine = Math.max(0, Math.min(line, cmView.state.doc.lines - 1));
+    const linePos = cmView.state.doc.line(clampedLine + 1).from;
+    const centerLine = () => {
+      cmView.dispatch({
+        effects: EditorView.scrollIntoView(linePos, { y: "center", yMargin: 0 }),
+      });
+    };
+
+    // 打开文件后视图可能还在布局，补一次延迟居中更稳定
+    centerLine();
+    window.setTimeout(centerLine, 30);
   }
 
   private findFirstContentLine(lines: string[], h1Title: string, h2Title: string): number {

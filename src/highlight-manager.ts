@@ -90,53 +90,52 @@ export class HighlightManager {
     // 获取设定库中的所有文件
     const files = this.plugin.parser.getMarkdownFilesInFolder(settingFolder);
 
-    // 解析每个文件，提取H2标题
-    for (const file of files) {
-      const parseResult = await this.plugin.parser.parseFile(file);
-      if (parseResult) {
-        // 遍历所有H1
-        for (const h1 of parseResult.h1List) {
-          // 遍历所有H2
-          for (const h2 of h1.h2List) {
-            // H2的文本就是关键字
-            const keyword = h2.text.trim();
-            if (keyword) {
-              const h2Aliases = this.extractAliases(h2.content);
-              const h2GroupId = `h2::${parseResult.filePath}::${h1.text}::${h2.text}`;
-              const h2PreviewData: KeywordPreviewData = {
-                keyword,
+    // 并行解析每个文件，提取H2标题
+    const parsedList = await Promise.all(files.map((file) => this.plugin.parser.parseFile(file)));
+    for (const parseResult of parsedList) {
+      if (!parseResult) continue;
+      // 遍历所有H1
+      for (const h1 of parseResult.h1List) {
+        // 遍历所有H2
+        for (const h2 of h1.h2List) {
+          // H2的文本就是关键字
+          const keyword = h2.text.trim();
+          if (keyword) {
+            const h2Aliases = this.extractAliases(h2.content);
+            const h2GroupId = `h2::${parseResult.filePath}::${h1.text}::${h2.text}`;
+            const h2PreviewData: KeywordPreviewData = {
+              keyword,
+              filePath: parseResult.filePath,
+              fileName: parseResult.fileName,
+              h1Title: h1.text,
+              h2Title: h2.text,
+              status: this.extractPreferredStatus(h2.content),
+              aliases: h2Aliases,
+              bodyLines: this.extractBodyLines(h2.content),
+            };
+
+            this.addKeywordVariant(keywords, previewMap, groupMap, keyword, h2PreviewData, h2GroupId);
+            for (const alias of h2Aliases) {
+              this.addKeywordVariant(keywords, previewMap, groupMap, alias, h2PreviewData, h2GroupId);
+            }
+
+            const h3Sections = this.extractH3Sections(h2.content);
+            for (const h3 of h3Sections) {
+              if (!h3.title) continue;
+              const h3GroupId = `h3::${parseResult.filePath}::${h1.text}::${h2.text}::${h3.title}`;
+              const h3PreviewData: KeywordPreviewData = {
+                keyword: h3.title,
                 filePath: parseResult.filePath,
                 fileName: parseResult.fileName,
                 h1Title: h1.text,
                 h2Title: h2.text,
-                status: this.extractPreferredStatus(h2.content),
-                aliases: h2Aliases,
-                bodyLines: this.extractBodyLines(h2.content),
+                status: h3.status,
+                aliases: h3.aliases,
+                bodyLines: h3.bodyLines,
               };
-
-              this.addKeywordVariant(keywords, previewMap, groupMap, keyword, h2PreviewData, h2GroupId);
-              for (const alias of h2Aliases) {
-                this.addKeywordVariant(keywords, previewMap, groupMap, alias, h2PreviewData, h2GroupId);
-              }
-
-              const h3Sections = this.extractH3Sections(h2.content);
-              for (const h3 of h3Sections) {
-                if (!h3.title) continue;
-                const h3GroupId = `h3::${parseResult.filePath}::${h1.text}::${h2.text}::${h3.title}`;
-                const h3PreviewData: KeywordPreviewData = {
-                  keyword: h3.title,
-                  filePath: parseResult.filePath,
-                  fileName: parseResult.fileName,
-                  h1Title: h1.text,
-                  h2Title: h2.text,
-                  status: h3.status,
-                  aliases: h3.aliases,
-                  bodyLines: h3.bodyLines,
-                };
-                this.addKeywordVariant(keywords, previewMap, groupMap, h3.title, h3PreviewData, h3GroupId);
-                for (const alias of h3.aliases) {
-                  this.addKeywordVariant(keywords, previewMap, groupMap, alias, h3PreviewData, h3GroupId);
-                }
+              this.addKeywordVariant(keywords, previewMap, groupMap, h3.title, h3PreviewData, h3GroupId);
+              for (const alias of h3.aliases) {
+                this.addKeywordVariant(keywords, previewMap, groupMap, alias, h3PreviewData, h3GroupId);
               }
             }
           }
@@ -653,7 +652,28 @@ export class HighlightManager {
     if (!targetView?.editor) return;
 
     targetView.editor.setCursor({ line: targetLine, ch: 0 });
+    this.centerEditorLine(targetView.editor, targetLine);
     this.hidePreview();
+  }
+
+  private centerEditorLine(
+    editor: unknown,
+    line: number
+  ): void {
+    const cmView = (editor as { cm?: EditorView }).cm;
+    if (!cmView) return;
+
+    const clampedLine = Math.max(0, Math.min(line, cmView.state.doc.lines - 1));
+    const linePos = cmView.state.doc.line(clampedLine + 1).from;
+    const centerLine = () => {
+      cmView.dispatch({
+        effects: EditorView.scrollIntoView(linePos, { y: "center", yMargin: 0 }),
+      });
+    };
+
+    // 打开文件后视图可能还在布局，补一次延迟居中更稳定
+    centerLine();
+    window.setTimeout(centerLine, 30);
   }
 
   private findFirstContentLine(lines: string[], h1Title: string, h2Title: string): number {
