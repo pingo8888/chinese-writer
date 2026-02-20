@@ -5,6 +5,7 @@ import { TreeView, VIEW_TYPE_TREE } from "./tree-view";
 import { OrderManager } from "./order-manager";
 import { HighlightManager } from "./highlight-manager";
 import { EditorTypographyManager } from "./editor-typography-manager";
+import { MdStatsManager } from "./md-stats-manager";
 
 /**
  * 中文写作插件主类
@@ -15,6 +16,7 @@ export default class ChineseWriterPlugin extends Plugin {
   orderManager: OrderManager;
   highlightManager: HighlightManager;
   editorTypographyManager: EditorTypographyManager;
+  mdStatsManager: MdStatsManager;
   private pluginDir = "";
   private settingsFilePath = "";
   private settingMenuRootEl: HTMLElement | null = null;
@@ -42,14 +44,20 @@ export default class ChineseWriterPlugin extends Plugin {
     this.highlightManager = new HighlightManager(this);
     // 初始化编辑区排版管理器
     this.editorTypographyManager = new EditorTypographyManager(this);
+    // 初始化 Markdown 统计管理器
+    this.mdStatsManager = new MdStatsManager(this);
 
     // 注册编辑器扩展（关键字高亮）
     this.registerEditorExtension(this.highlightManager.createEditorExtension());
+    // 注册编辑器扩展（选区/字数统计）
+    this.registerEditorExtension(this.mdStatsManager.createSelectionListenerExtension());
 
     // 初始化高亮样式
     this.highlightManager.updateStyles();
     // 初始化编辑区排版样式
     this.editorTypographyManager.updateStyles();
+    // 初始化统计显示
+    this.mdStatsManager.setup();
 
     // 注册视图
     this.registerView(
@@ -108,6 +116,7 @@ export default class ChineseWriterPlugin extends Plugin {
       this.app.vault.on("modify", (file) => {
         // 当文件被修改时，智能更新视图（保持展开状态）
         if (file instanceof TFile && file.extension === "md") {
+          this.mdStatsManager.onVaultFileChanged(file.path);
           this.smartUpdateView();
           this.updateH3CacheForSettingFile(file.path);
 
@@ -131,6 +140,7 @@ export default class ChineseWriterPlugin extends Plugin {
       this.app.vault.on("create", (file) => {
         // 当新文件被创建时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
+          this.mdStatsManager.onVaultFileChanged(file.path);
           this.syncOrderOnFileCreate(file);
           this.updateH3CacheForSettingFile(file.path);
         }
@@ -141,6 +151,7 @@ export default class ChineseWriterPlugin extends Plugin {
       this.app.vault.on("delete", (file) => {
         // 当文件被删除时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
+          this.mdStatsManager.onVaultFileChanged(file.path);
           this.syncOrderOnFileDelete(file);
           this.updateH3CacheForSettingFile(file.path);
         }
@@ -151,10 +162,18 @@ export default class ChineseWriterPlugin extends Plugin {
       this.app.vault.on("rename", (file, oldPath) => {
         // 当文件被重命名时，同步 order.json 并更新视图
         if (file instanceof TFile && file.extension === "md") {
+          this.mdStatsManager.onVaultFileChanged(oldPath);
+          this.mdStatsManager.onVaultFileChanged(file.path);
           this.syncOrderOnFileRename(file, oldPath);
           this.updateH3CacheForSettingFile(oldPath);
           this.updateH3CacheForSettingFile(file.path);
         }
+      })
+    );
+
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        this.mdStatsManager.onActiveLeafChanged();
       })
     );
 
@@ -167,6 +186,7 @@ export default class ChineseWriterPlugin extends Plugin {
   onunload() {
     // 清理视图
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_TREE);
+    this.mdStatsManager.destroy();
   }
 
   /**

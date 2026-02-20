@@ -547,3 +547,37 @@
     font-size: 14px;
   }
 }
+
+/* 原生文件资源管理器：文件名省略，避免被统计区覆盖 */
+.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title,
+.workspace-leaf-content[data-type="file-explorer"] .nav-file-title {
+  display: flex;
+  align-items: center;
+}
+
+.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title-content,
+.workspace-leaf-content[data-type="file-explorer"] .nav-file-title-content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 原生文件资源管理器：目录/文件统计 */
+.workspace-leaf-content[data-type="file-explorer"] .nav-folder-title .cw-folder-md-stats,
+.workspace-leaf-content[data-type="file-explorer"] .nav-file-title .cw-file-md-stats {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: right;
+  padding-left: 4px;
+  flex-shrink: 0;
+  min-width: 56px;
+}
+
+/* 右下角状态栏：字数统计 */
+.cw-status-char-counter {
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
+}

@@ -102,6 +102,8 @@ export interface ChineseWriterSettings {
   enableTreeH2HoverPreview: boolean;
   /** 通过插件功能打开/新建文件时是否在新标签页打开 */
   openInNewTab: boolean;
+  /** 是否启用字符数统计功能 */
+  enableMdStats: boolean;
 }
 
 /**
@@ -142,6 +144,7 @@ export const DEFAULT_SETTINGS: ChineseWriterSettings = {
   enableEditorHoverPreview: true,
   enableTreeH2HoverPreview: false,
   openInNewTab: true,
+  enableMdStats: false,
 };
 
 /**
@@ -586,6 +589,22 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
             this.plugin.settings.editorParagraphSpacing = value;
             await this.plugin.saveSettings();
             this.updateEditorTypographyStyles();
+          })
+      );
+
+    // 便捷功能
+    containerEl.createEl("h3", { text: "便捷功能" });
+
+    new Setting(containerEl)
+      .setName("启用字符数统计")
+      .setDesc("关闭后不显示统计，且不在后台执行字符统计")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableMdStats)
+          .onChange(async (value) => {
+            this.plugin.settings.enableMdStats = value;
+            await this.plugin.saveSettings();
+            this.plugin.mdStatsManager.setEnabled(value);
           })
       );
   }
