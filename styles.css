@@ -596,3 +596,34 @@
   color: var(--text-faint);
   font-size: 11px;
 }
+
+/* 编辑区标题前等级图标 */
+.cm-line.cw-heading-line-with-icon {
+  position: relative;
+  padding-left: 18px;
+}
+
+.cw-heading-level-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 0;
+  color: var(--text-faint);
+  vertical-align: middle;
+  opacity: 0.9;
+}
+
+.cw-heading-level-icon-overlay {
+  position: absolute;
+  left: -22px;
+  pointer-events: none;
+}
+
+.cw-heading-level-icon-svg {
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}

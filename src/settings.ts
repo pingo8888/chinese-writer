@@ -104,6 +104,8 @@ export interface ChineseWriterSettings {
   openInNewTab: boolean;
   /** 是否启用字符数统计功能 */
   enableMdStats: boolean;
+  /** 是否在编辑区标题前显示等级图标 */
+  enableEditorHeadingIcons: boolean;
 }
 
 /**
@@ -145,6 +147,7 @@ export const DEFAULT_SETTINGS: ChineseWriterSettings = {
   enableTreeH2HoverPreview: false,
   openInNewTab: true,
   enableMdStats: false,
+  enableEditorHeadingIcons: false,
 };
 
 /**
@@ -605,6 +608,19 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
             this.plugin.settings.enableMdStats = value;
             await this.plugin.saveSettings();
             this.plugin.mdStatsManager.setEnabled(value);
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("编辑区标题图标")
+      .setDesc("在编辑视图各级标题前显示对应等级图标")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableEditorHeadingIcons)
+          .onChange(async (value) => {
+            this.plugin.settings.enableEditorHeadingIcons = value;
+            await this.plugin.saveSettings();
+            this.plugin.mdStatsManager.refreshEditorDecorations();
           })
       );
   }

@@ -1,6 +1,15 @@
-import { MarkdownView, TFile } from "obsidian";
+import { MarkdownView, TFile, setIcon } from "obsidian";
 import { RangeSet, RangeSetBuilder, Transaction } from "@codemirror/state";
-import { EditorView, GutterMarker, ViewUpdate, gutter } from "@codemirror/view";
+import {
+  Decoration,
+  DecorationSet,
+  EditorView,
+  GutterMarker,
+  ViewPlugin,
+  ViewUpdate,
+  WidgetType,
+  gutter
+} from "@codemirror/view";
 import type ChineseWriterPlugin from "./main";
 
 interface FileCharCacheEntry {
@@ -30,6 +39,31 @@ class CharMilestoneMarker extends GutterMarker {
   }
 }
 
+class HeadingLevelIconWidget extends WidgetType {
+  private level: number;
+
+  constructor(level: number) {
+    super();
+    this.level = level;
+  }
+
+  toDOM(): HTMLElement {
+    const wrapper = document.createElement("span");
+    wrapper.className = `cw-heading-level-icon cw-heading-level-icon-${this.level} cw-heading-level-icon-overlay`;
+
+    const iconEl = document.createElement("span");
+    iconEl.className = "cw-heading-level-icon-svg";
+    const preferredIcon = `heading-${this.level}`;
+    setIcon(iconEl, preferredIcon);
+    if (!iconEl.firstChild) {
+      setIcon(iconEl, "heading");
+    }
+    wrapper.appendChild(iconEl);
+
+    return wrapper;
+  }
+}
+
 /**
  * Markdown 统计管理器
  * 负责目录统计渲染与状态栏字数统计。
@@ -42,6 +76,7 @@ export class MdStatsManager {
   private mutationObserver: MutationObserver | null = null;
   private statusBarEl: HTMLElement | null = null;
   private statusUpdateRunId = 0;
+  private headingIconRenderVersion = 0;
 
   constructor(plugin: ChineseWriterPlugin) {
     this.plugin = plugin;
@@ -75,6 +110,39 @@ export class MdStatsManager {
     });
   }
 
+  createHeadingIconExtension() {
+    const manager = this;
+    return ViewPlugin.fromClass(
+      class {
+        decorations: DecorationSet = Decoration.none;
+        headingIconVersionSeen = -1;
+
+        constructor(view: EditorView) {
+          this.headingIconVersionSeen = manager.getHeadingIconRenderVersion();
+          this.decorations = manager.buildHeadingIconDecorations(view);
+        }
+
+        update(update: ViewUpdate) {
+          const settingChanged =
+            this.headingIconVersionSeen !== manager.getHeadingIconRenderVersion();
+          if (
+            settingChanged ||
+            update.docChanged ||
+            update.viewportChanged ||
+            update.geometryChanged ||
+            update.selectionSet
+          ) {
+            this.headingIconVersionSeen = manager.getHeadingIconRenderVersion();
+            this.decorations = manager.buildHeadingIconDecorations(update.view);
+          }
+        }
+      },
+      {
+        decorations: (value) => value.decorations,
+      }
+    );
+  }
+
   setEnabled(enabled: boolean): void {
     if (enabled) {
       this.startRuntime();
@@ -84,6 +152,15 @@ export class MdStatsManager {
     this.stopRuntime();
     this.clearFileExplorerBadges();
     this.refreshMarkdownEditors();
+  }
+
+  refreshEditorDecorations(): void {
+    this.headingIconRenderVersion++;
+    this.refreshMarkdownEditors();
+  }
+
+  private getHeadingIconRenderVersion(): number {
+    return this.headingIconRenderVersion;
   }
 
   onVaultFileChanged(filePath?: string): void {
@@ -289,6 +366,48 @@ export class MdStatsManager {
       }
     }
     return result;
+  }
+
+  private buildHeadingIconDecorations(view: EditorView): DecorationSet {
+    if (!this.plugin.settings.enableEditorHeadingIcons) {
+      return Decoration.none;
+    }
+    const markdownView = this.getMarkdownViewForEditorView(view);
+    const file = markdownView?.file;
+    if (!file || file.extension !== "md") {
+      return Decoration.none;
+    }
+
+    const builder = new RangeSetBuilder<Decoration>();
+    for (const range of view.visibleRanges) {
+      let line = view.state.doc.lineAt(range.from);
+      while (line.from <= range.to) {
+        const match = line.text.match(/^(\s{0,3})(#{1,6})\s+/);
+        if (match) {
+          const leadingSpaces = match[1]?.length ?? 0;
+          const level = match[2]?.length ?? 0;
+          if (level >= 1 && level <= 6) {
+            builder.add(
+              line.from,
+              line.from,
+              Decoration.line({ class: `cw-heading-line-with-icon cw-heading-line-h${level}` })
+            );
+            builder.add(
+              line.from + leadingSpaces,
+              line.from + leadingSpaces,
+              Decoration.widget({
+                widget: new HeadingLevelIconWidget(level),
+                side: 1,
+              })
+            );
+          }
+        }
+        if (line.to + 1 > view.state.doc.length) break;
+        line = view.state.doc.lineAt(line.to + 1);
+      }
+    }
+
+    return builder.finish();
   }
 
   private buildLineMilestoneMarkers(view: EditorView): RangeSet<GutterMarker> {
