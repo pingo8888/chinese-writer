@@ -553,18 +553,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
-      .setName("两端对齐")
-      .setDesc("开启后编辑区正文使用两端对齐，并启用自动断词")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.enableEditorJustify)
-          .onChange(async (value) => {
-            this.plugin.settings.enableEditorJustify = value;
-            await this.plugin.saveSettings();
-            this.updateEditorTypographyStyles();
-          })
-      );
+
 
     new Setting(containerEl)
       .setName("行首缩进（中文字符）")
@@ -639,6 +628,20 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
             this.plugin.mdStatsManager.refreshEditorDecorations();
           })
       );
+
+    new Setting(containerEl)
+      .setName("两端对齐")
+      .setDesc("开启后编辑区正文使用两端对齐，并启用自动断词")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableEditorJustify)
+          .onChange(async (value) => {
+            this.plugin.settings.enableEditorJustify = value;
+            await this.plugin.saveSettings();
+            this.updateEditorTypographyStyles();
+          })
+      );
+
   }
 
   /**
