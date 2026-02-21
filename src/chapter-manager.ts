@@ -55,8 +55,8 @@ export class ChapterManager {
       const containerEl = (view as { containerEl?: HTMLElement } | null)?.containerEl;
       if (!containerEl) return false;
 
-      const titleEl = containerEl.querySelector(".inline-title");
-      if (!(titleEl instanceof HTMLElement)) return false;
+      const titleEl = containerEl.querySelector(".inline-title") as HTMLElement | null;
+      if (!titleEl) return false;
 
       if (titleEl instanceof HTMLInputElement || titleEl instanceof HTMLTextAreaElement) {
         titleEl.focus();

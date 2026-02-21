@@ -12,26 +12,42 @@ export class EditorTypographyManager {
   }
 
   updateStyles(): void {
-    const body = document.body;
-    if (!body) return;
+    const oldStyle = document.getElementById("chinese-writer-editor-typography-style");
+    if (oldStyle) {
+      oldStyle.remove();
+    }
 
     if (!this.plugin.settings.enableEditorTypography) {
-      body.removeClass("cw-editor-typography-enabled");
-      body.removeClass("cw-editor-justify-enabled");
-      body.style.removeProperty("--cw-editor-indent-cjk");
-      body.style.removeProperty("--cw-editor-line-height");
-      body.style.removeProperty("--cw-editor-paragraph-spacing");
       return;
     }
 
     const indentChars = Math.max(0, this.plugin.settings.editorIndentCjkChars ?? 0);
     const lineHeight = Math.max(1, this.plugin.settings.editorLineHeight ?? 1.8);
     const paragraphSpacing = Math.max(0, this.plugin.settings.editorParagraphSpacing ?? 0);
+    const justifyCss = this.plugin.settings.enableEditorJustify
+      ? `
+      .cm-s-obsidian {
+        text-align: justify;
+        hyphens: auto;
+      }
+      `
+      : "";
 
-    body.addClass("cw-editor-typography-enabled");
-    body.toggleClass("cw-editor-justify-enabled", this.plugin.settings.enableEditorJustify);
-    body.style.setProperty("--cw-editor-indent-cjk", String(indentChars));
-    body.style.setProperty("--cw-editor-line-height", String(lineHeight));
-    body.style.setProperty("--cw-editor-paragraph-spacing", `${paragraphSpacing}px`);
+    const styleEl = document.createElement("style");
+    styleEl.id = "chinese-writer-editor-typography-style";
+    styleEl.textContent = `
+      .markdown-source-view.mod-cm6 .cm-line {
+        line-height: ${lineHeight};
+      }
+
+      .markdown-source-view.mod-cm6 .cm-line:not(.HyperMD-codeblock):not(.HyperMD-header):not(.HyperMD-list-line):not(.HyperMD-quote) {
+        text-indent: calc(${indentChars} * 1em);
+        padding-top: calc(${paragraphSpacing}px / 2);
+        padding-bottom: calc(${paragraphSpacing}px / 2);
+        box-sizing: border-box;
+      }
+      ${justifyCss}
+    `;
+    document.head.appendChild(styleEl);
   }
 }

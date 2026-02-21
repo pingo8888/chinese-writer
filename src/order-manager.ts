@@ -1,5 +1,5 @@
 import { App, TFile } from "obsidian";
-import type { OrderData } from "./types";
+import type { OrderData, H1Info, H2Info } from "./types";
 
 /**
  * 排序管理器
@@ -76,7 +76,7 @@ export class OrderManager {
       if (targetPath === this.legacyViewDataFilePath && !hasViewDataFile) {
         await this.saveNow();
       }
-    } catch {
+    } catch (error) {
       // 文件不存在或解析失败，使用默认值
       this.orderData = {
         files: [],
@@ -734,6 +734,7 @@ export class OrderManager {
 
     let insertIndex = lines.length;
     let inTargetH1 = false;
+    let foundTargetH2 = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -752,6 +753,8 @@ export class OrderManager {
       } else if (inTargetH1 && trimmed.startsWith("## ") && !trimmed.startsWith("### ")) {
         const currentH2 = trimmed.substring(3).trim();
         if (currentH2 === targetH2Text) {
+          foundTargetH2 = true;
+
           if (insertBefore) {
             // 插入到目标 H2 之前
             insertIndex = i;
