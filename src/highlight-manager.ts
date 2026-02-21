@@ -599,8 +599,8 @@ export class HighlightManager {
 
   private applyBodyMaxHeight(previewHeightPx: number, maxBodyLines: number): void {
     if (!this.previewEl) return;
-    const bodyEl = this.previewEl.querySelector(".cw-preview-body") as HTMLElement | null;
-    if (!bodyEl) return;
+    const bodyEl = this.previewEl.querySelector(".cw-preview-body");
+    if (!(bodyEl instanceof HTMLElement)) return;
 
     const approxLineHeightPx = 21;
     const desiredBodyHeight = Math.max(40, maxBodyLines * approxLineHeightPx);
@@ -630,7 +630,7 @@ export class HighlightManager {
       const container = searchView?.containerEl;
       if (!container) return;
 
-      const input = container.querySelector("input") as HTMLInputElement | null;
+      const input = container.querySelector("input");
       if (!input) return;
 
       input.value = query;
