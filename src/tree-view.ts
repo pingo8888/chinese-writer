@@ -654,7 +654,7 @@ export class TreeView extends ItemView {
   }
 
   private updateHeaderFolderName(container: HTMLElement): void {
-    const folderNameEl = container.querySelector(".chinese-writer-folder-name");
+    const folderNameEl = container.querySelector(".chinese-writer-folder-name") as HTMLElement | null;
     if (!folderNameEl) return;
     folderNameEl.setText(this.getFolderDisplayName(this.currentSettingFolder));
   }

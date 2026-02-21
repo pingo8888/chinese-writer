@@ -317,7 +317,7 @@ export class MdStatsManager {
         continue;
       }
       const text = `${this.formatCharCount(charCount)}`;
-      let badgeEl = fileTitleEl.querySelector(".cw-file-md-stats");
+      let badgeEl = fileTitleEl.querySelector(".cw-file-md-stats") as HTMLElement | null;
       if (!badgeEl) {
         badgeEl = fileTitleEl.createSpan({ cls: "cw-file-md-stats" });
       }
@@ -507,7 +507,7 @@ export class MdStatsManager {
 
   private renderFolderStatsBadge(folderTitleEl: HTMLElement, stats: FolderStats): void {
     const text = `${stats.fileCount}章 | ${this.formatCharCount(stats.charCount)}`;
-    let badgeEl = folderTitleEl.querySelector(".cw-folder-md-stats");
+    let badgeEl = folderTitleEl.querySelector(".cw-folder-md-stats") as HTMLElement | null;
     if (!badgeEl) {
       badgeEl = folderTitleEl.createSpan({ cls: "cw-folder-md-stats" });
     }
@@ -525,7 +525,7 @@ export class MdStatsManager {
 
     const charCount = await this.getFileCharCount(file);
     const text = `${this.formatCharCount(charCount)}`;
-    let badgeEl = fileTitleEl.querySelector(".cw-file-md-stats");
+    let badgeEl = fileTitleEl.querySelector(".cw-file-md-stats") as HTMLElement | null;
     if (!badgeEl) {
       badgeEl = fileTitleEl.createSpan({ cls: "cw-file-md-stats" });
     }

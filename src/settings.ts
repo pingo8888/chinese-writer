@@ -180,10 +180,10 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
 
     containerEl.empty();
 
-    new Setting(containerEl).setName("中文写作插件设置").setHeading();
+    containerEl.createEl("h2", { text: "中文写作插件设置", cls: "cw-settings-main-title" });
 
     // 文件夹对应关系设置
-    new Setting(containerEl).setName("文件夹对应关系").setHeading();
+    containerEl.createEl("h3", { text: "文件夹对应关系" });
     containerEl.createEl("p", {
       text: "配置小说库和设定库的对应关系。在小说库文件打开时，会显示对应设定库的内容，并高亮关键字。",
       cls: "setting-item-description"
@@ -209,7 +209,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       );
 
     // 高亮样式设置
-    new Setting(containerEl).setName("关键字高亮样式").setHeading();
+    containerEl.createEl("h3", { text: "关键字高亮样式" });
 
     new Setting(containerEl)
       .setName("高亮模式")
@@ -332,7 +332,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       );
 
     // 常见标点检测设置
-    new Setting(containerEl).setName("常见标点检测").setHeading();
+    containerEl.createEl("h3", { text: "常见标点检测" });
 
     new Setting(containerEl)
       .setName("启用常见标点检测")
@@ -454,7 +454,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       });
 
     // 高亮预览栏设置
-    new Setting(containerEl).setName("预览栏设置").setHeading();
+    containerEl.createEl("h3", { text: "预览栏设置" });
 
     new Setting(containerEl)
       .setName("正文悬停预览")
@@ -523,7 +523,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       );
 
     // 文件打开行为设置
-    new Setting(containerEl).setName("文件打开行为").setHeading();
+    containerEl.createEl("h3", { text: "文件打开行为" });
 
     new Setting(containerEl)
       .setName("在新标签页打开")
@@ -538,7 +538,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       );
 
     // 编辑区排版设置
-    new Setting(containerEl).setName("编辑区排版").setHeading();
+    containerEl.createEl("h3", { text: "编辑区排版" });
 
     new Setting(containerEl)
       .setName("启用编辑区排版")
@@ -601,7 +601,7 @@ export class ChineseWriterSettingTab extends PluginSettingTab {
       );
 
     // 其他便捷功能
-    new Setting(containerEl).setName("其他便捷功能").setHeading();
+    containerEl.createEl("h3", { text: "其他便捷功能" });
 
     new Setting(containerEl)
       .setName("启用字符数统计")

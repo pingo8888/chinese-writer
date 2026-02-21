@@ -202,7 +202,7 @@ export default class ChineseWriterPlugin extends Plugin {
 
   onunload() {
     // 清理视图
-    
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE_TREE);
     this.mdStatsManager.destroy();
   }
 
@@ -471,15 +471,7 @@ export default class ChineseWriterPlugin extends Plugin {
   }
 
   private appendAddSettingEditorMenu(
-    menu: {
-      addSeparator: () => unknown;
-      addItem: (cb: (item: {
-        setTitle: (title: string) => void;
-        setIcon: (icon: string) => void;
-        onClick: (callback: (evt: MouseEvent | KeyboardEvent) => unknown) => unknown;
-        dom?: HTMLElement;
-      }) => void) => unknown;
-    },
+    menu: { addSeparator: () => unknown; addItem: (cb: (item: any) => void) => unknown },
     editor: { getSelection: () => string },
     info: unknown
   ): void {
@@ -496,7 +488,7 @@ export default class ChineseWriterPlugin extends Plugin {
     if (this.hasH3InSettingFolder(settingFolder, selectedText)) return;
 
     menu.addSeparator();
-    menu.addItem((item) => {
+    menu.addItem((item: any) => {
       item.setTitle("添加设定");
       item.setIcon("book-plus");
 
@@ -505,7 +497,7 @@ export default class ChineseWriterPlugin extends Plugin {
         void this.openSettingFirstLevelMenu(evt.clientX, evt.clientY, settingFolder, selectedText, null);
       });
 
-      const itemDom = item.dom;
+      const itemDom = item?.dom as HTMLElement | undefined;
       if (itemDom) {
         const arrowEl = itemDom.createSpan({ cls: "cw-context-submenu-arrow" });
         setIcon(arrowEl, "chevron-right");

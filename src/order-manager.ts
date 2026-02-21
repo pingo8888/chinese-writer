@@ -10,7 +10,7 @@ export class OrderManager {
   private legacyViewDataFilePath: string;
   private legacyOrderFilePath: string;
   private orderData: OrderData;
-  private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private saveTimeout: NodeJS.Timeout | null = null;
   private isSaving: boolean = false;
 
   constructor(app: App, pluginDir: string) {
@@ -50,7 +50,7 @@ export class OrderManager {
       const content = await adapter.read(targetPath);
       const parsed = JSON.parse(content) as Partial<OrderData> | null;
       const files = Array.isArray(parsed?.files)
-        ? parsed.files.filter((item): item is string => typeof item === "string" && item.length > 0)
+        ? parsed!.files.filter((item): item is string => typeof item === "string" && item.length > 0)
         : [];
       const expandedStatesByFolder: Record<string, Record<string, boolean>> = {};
       if (parsed?.expandedStatesByFolder && typeof parsed.expandedStatesByFolder === "object") {
