@@ -1,4 +1,4 @@
-import { App, TFile, MarkdownView, editorLivePreviewField, setIcon } from "obsidian";
+import { App, TFile, MarkdownView, setIcon } from "obsidian";
 import type ChineseWriterPlugin from "./main";
 import { EditorView, Decoration, DecorationSet, ViewPlugin, ViewUpdate, PluginValue } from "@codemirror/view";
 import { RangeSetBuilder, Transaction } from "@codemirror/state";
@@ -283,7 +283,7 @@ export class HighlightManager {
   }
 
   private getKeywordGroupMap(settingFolder: string): Map<string, string> {
-    return this.keywordGroupCache.get(settingFolder) ?? new Map();
+    return this.keywordGroupCache.get(settingFolder) ?? new Map<string, string>();
   }
 
   private addKeywordVariant(
@@ -337,7 +337,6 @@ export class HighlightManager {
   private initializeHoverPreview(): void {
     this.previewEl = document.createElement("div");
     this.previewEl.className = "chinese-writer-highlight-preview";
-    this.previewEl.style.display = "none";
     document.body.appendChild(this.previewEl);
 
     this.plugin.registerDomEvent(this.previewEl, "mouseenter", () => {
@@ -386,8 +385,8 @@ export class HighlightManager {
       return;
     }
 
-    const treeAnchorEl = target.closest(".cw-tree-preview-anchor") as HTMLElement | null;
-    if (treeAnchorEl) {
+    const treeAnchorEl = target.closest(".cw-tree-preview-anchor");
+    if (treeAnchorEl instanceof HTMLElement) {
       if (!this.plugin.settings.enableTreeH2HoverPreview) {
         this.scheduleHidePreview(80);
         return;
@@ -397,8 +396,8 @@ export class HighlightManager {
       return;
     }
 
-    const highlightEl = target.closest(".chinese-writer-highlight") as HTMLElement | null;
-    if (!highlightEl) {
+    const highlightEl = target.closest(".chinese-writer-highlight");
+    if (!(highlightEl instanceof HTMLElement)) {
       this.scheduleHidePreview();
       return;
     }
@@ -502,10 +501,10 @@ export class HighlightManager {
         attr: { "aria-label": "搜索", title: "搜索" },
       });
       setIcon(searchBtn, "search");
-      searchBtn.addEventListener("click", async (e) => {
+      searchBtn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        await this.openGlobalSearch(previewData.keyword);
+        void this.openGlobalSearch(previewData.keyword);
       });
 
       const editBtn = actionsEl.createEl("button", {
@@ -513,10 +512,10 @@ export class HighlightManager {
         attr: { "aria-label": "编辑", title: "编辑" },
       });
       setIcon(editBtn, "pen");
-      editBtn.addEventListener("click", async (e) => {
+      editBtn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        await this.openKeywordSource(previewData);
+        void this.openKeywordSource(previewData);
       });
 
       if (previewData.aliases.length > 0) {
@@ -552,7 +551,7 @@ export class HighlightManager {
     this.previewEl.style.width = `${previewStyle.width}px`;
     this.previewEl.style.maxHeight = `${previewStyle.height}px`;
     this.previewEl.style.setProperty("--cw-preview-max-lines", String(previewStyle.maxBodyLines));
-    this.previewEl.style.display = "flex";
+    this.previewEl.addClass("is-visible");
     this.applyBodyMaxHeight(previewStyle.height, previewStyle.maxBodyLines);
 
     // 预览栏只在首次出现时定位，避免跟随鼠标不断抖动
@@ -578,7 +577,7 @@ export class HighlightManager {
   private hidePreview(): void {
     this.clearScheduledHidePreview();
     if (!this.previewEl) return;
-    this.previewEl.style.display = "none";
+    this.previewEl.removeClass("is-visible");
     this.previewHoverKey = "";
     this.previewAnchorEl = null;
     this.currentPreviewData = null;

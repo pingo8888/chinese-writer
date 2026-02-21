@@ -445,7 +445,7 @@ export class TreeView extends ItemView {
     if (node.type === "file" || node.type === "h1") {
       const h2Count = this.countH2(node);
       if (h2Count > 0) {
-        const countEl = nodeContent.createSpan({
+        nodeContent.createSpan({
           text: `[${h2Count}]`,
           cls: "tree-item-count",
         });
@@ -1480,7 +1480,7 @@ export class TreeView extends ItemView {
         }
 
         // 删除文件
-        await this.app.vault.delete(file);
+        await this.app.fileManager.trashFile(file);
 
         // 从 order.json 中移除该文件
         const index = fileOrder.indexOf(node.filePath!);

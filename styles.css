@@ -62,9 +62,30 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
-  display: flex;
+  display: none;
   flex-direction: column;
   --cw-preview-max-lines: 12;
+}
+
+.chinese-writer-highlight-preview.is-visible {
+  display: flex;
+}
+
+/* 编辑区排版（通过 body class + CSS 变量控制） */
+body.cw-editor-typography-enabled .markdown-source-view.mod-cm6 .cm-line {
+  line-height: var(--cw-editor-line-height, 1.8);
+}
+
+body.cw-editor-typography-enabled .markdown-source-view.mod-cm6 .cm-line:not(.HyperMD-codeblock):not(.HyperMD-header):not(.HyperMD-list-line):not(.HyperMD-quote) {
+  text-indent: calc(var(--cw-editor-indent-cjk, 0) * 1em);
+  padding-top: calc(var(--cw-editor-paragraph-spacing, 0px) / 2);
+  padding-bottom: calc(var(--cw-editor-paragraph-spacing, 0px) / 2);
+  box-sizing: border-box;
+}
+
+body.cw-editor-justify-enabled .cm-s-obsidian {
+  text-align: justify;
+  hyphens: auto;
 }
 
 .cw-preview-header {
