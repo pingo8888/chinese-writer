@@ -25,6 +25,9 @@
 ## 右键菜单快速添加设定
 ![](./images/add%20keyword%20quickly.png)
 
+## 正文“//”快速使用现有设定名
+![](./images/slash%20h2%20keywords.png)
+
 ## 中文字数统计
 ![](./images/chinese%20word%20counter%20status%20bar.png)
 ![](./images/chinese%20word%20counter%20file%20explorer.png)
