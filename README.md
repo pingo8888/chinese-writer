@@ -9,6 +9,19 @@
 
 <hr style="border-top: 2px dashed #ccc;">
 
+# ⚠️ 项目已迁移
+
+> 为了上架官方插件市场，对插件进行大规模重构，项目已迁移到新的仓库继续维护：
+
+👉 **新仓库地址：**
+https://github.com/pingo8888/chinese-novel-assistant
+
+请前往新仓库获取最新代码、提交 Issue 或参与开发。
+
+感谢你的关注与支持 🙏
+
+<hr style="border-top: 2px dashed #ccc;">
+
 一款辅助中文小说作者写作的 Obsidian 插件，提供一系列开箱即用的便捷功能。
 
 <hr style="border-top: 2px dashed #ccc;">
